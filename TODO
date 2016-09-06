@@ -1,0 +1,27 @@
+- System:
+   - Odroid XU4
+   - Arch Linux
+   - 7-inch screen
+- Features:
+   - Image as background
+   - Basic and animated memos by prio/date
+   - Youtube audio downloader
+   - MP3 player
+- Versions:
+   - 1.0:
+      - Bring up and Arch installation
+      - Enlightenment launch
+      - EFL Application development:
+         - Configuration in ~/.cuby/
+         - Features: basic memos, MP3
+         - Tabs for each feature
+      - Local connection only
+      - Update via ssh on specific files (monitoring)
+   - 2.0:
+      - Image as background
+      - Youtube audio downloader
+      - Animated memos
+   - 3.0:
+      - Update via Android application
+- Open:
+   - 3.0: How to sync from far?
