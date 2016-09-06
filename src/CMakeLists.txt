@@ -1,0 +1,36 @@
+set(CMAKE_BUILD_TYPE Debug)
+
+#set(PACKAGE_DATA_DIR_DEFINITION PACKAGE_DATA_DIR="${CMAKE_BINARY_DIR}/data/")
+
+LIST(APPEND SOURCES cuby.c)
+
+link_directories (${PC_LIBELEMENTARY_LIBRARY_DIRS})
+
+include_directories(
+   ${ELEMENTARY_INCLUDE_DIRS}
+   ${EINA_INCLUDE_DIRS}
+   ${EET_INCLUDE_DIRS}
+   ${EO_INCLUDE_DIRS}
+   ${ECORE_INCLUDE_DIRS}
+   ${EVAS_INCLUDE_DIRS}
+   )
+
+add_executable(cuby ${SOURCES})
+
+target_link_libraries(cuby
+   pthread
+   ${EFL_LIBRARIES}
+   ${ELEMENTARY_LIBRARIES}
+   ${EINA_LIBRARIES}
+   ${EET_LIBRARIES}
+   ${EO_LIBRARIES}
+   ${ECORE_LIBRARIES}
+   ${EVAS_LIBRARIES}
+   ecore_file
+   )
+
+set_property(TARGET cuby
+   PROPERTY COMPILE_DEFINITIONS ${PACKAGE_DATA_DIR_DEFINITION} 
+)
+
+install(TARGETS cuby DESTINATION bin)
