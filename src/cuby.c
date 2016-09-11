@@ -20,6 +20,8 @@ elm_main()
    sprintf(path, "%s/.cuby/memos", home_dir);
    _memos_started = memos_start(path);
 
+   elm_run();
+
    return 0;
 }
 ELM_MAIN()

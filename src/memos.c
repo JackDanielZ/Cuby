@@ -1,4 +1,5 @@
 #include <Eet.h>
+#include <Ecore.h>
 
 #include "common.h"
 
@@ -64,6 +65,30 @@ _memo_sort(const void *data1, const void *data2)
    return 0;
 }
 
+static Eina_Bool
+_memo_check(void *data EINA_UNUSED)
+{
+   time_t t;
+   time(&t);
+   struct tm *tm = localtime(&t);
+   printf("%d/%d/%d %d:%d:%d\n",
+         tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday,
+         tm->tm_hour, tm->tm_min, tm->tm_sec);
+
+   Memo *m = eina_list_data_get(_memos->lst);
+
+   if (m->year > tm->tm_year+1900) goto end;
+   if (m->month > tm->tm_mon+1) goto end;
+   if (m->mday > tm->tm_mday) goto end;
+   if (m->hour > tm->tm_hour) goto end;
+   if (m->minute > tm->tm_min) goto end;
+
+   printf("Need to consume %s\n", m->content);
+
+end:
+   return EINA_TRUE;
+}
+
 Eina_Bool
 memos_start(const char *filename)
 {
@@ -89,22 +114,14 @@ memos_start(const char *filename)
         m->content = "Docteur pour Naomi - oreilles";
         _memos->lst = eina_list_append(_memos->lst, m);
 
-        file = eet_open(filename, EET_FILE_MODE_WRITE);
-        eet_data_write(file, _memos_edd, "entry", _memos, EINA_TRUE);
-        eet_close(file);
      }
    _memos->lst = eina_list_sort(_memos->lst, 0, _memo_sort);
 
-/*
+   file = eet_open(filename, EET_FILE_MODE_WRITE);
+   eet_data_write(file, _memos_edd, "entry", _memos, EINA_TRUE);
+   eet_close(file);
 
-
-
-   Every minute, compare the first element with the current time. If the date and hour
-      correspond, create a timer and wait.
-
-*/
-
-
+   ecore_timer_add(1.0, _memo_check, NULL);
 
    EINA_LIST_FOREACH(_memos->lst, itr, memo)
      {
