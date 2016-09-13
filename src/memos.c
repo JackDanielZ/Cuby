@@ -1,5 +1,6 @@
 #include <Eet.h>
 #include <Ecore.h>
+#include <Elementary.h>
 
 #include "common.h"
 
@@ -92,8 +93,6 @@ end:
 Eina_Bool
 memos_start(const char *filename)
 {
-   Eina_List *itr;
-   Memo *memo;
    if (!_memos) _eet_load();
    Eet_File *file = eet_open(filename, EET_FILE_MODE_READ);
    if (file)
@@ -123,10 +122,37 @@ memos_start(const char *filename)
 
    ecore_timer_add(1.0, _memo_check, NULL);
 
+   return EINA_TRUE;
+}
+
+static char *
+_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED)
+{
+   Memo *memo = data;
+   return strdup(memo->content);
+}
+
+Eo *
+memos_ui_get(Eo *parent)
+{
+   Eo *gl = elm_genlist_add(parent);
+   evas_object_size_hint_weight_set(gl, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_show(gl);
+
+   Elm_Genlist_Item_Class *itc = elm_genlist_item_class_new();
+   itc->item_style = "default";
+   itc->func.text_get = _text_get;
+
+   Eina_List *itr;
+   Memo *memo;
    EINA_LIST_FOREACH(_memos->lst, itr, memo)
      {
+        elm_genlist_item_append(gl, itc, memo, NULL,
+              ELM_GENLIST_ITEM_NONE, NULL, NULL);
         printf("%s\n", memo->content);
      }
 
-   return EINA_TRUE;
+   return gl;
 }
+

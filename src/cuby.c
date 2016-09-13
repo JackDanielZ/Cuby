@@ -6,6 +6,58 @@
 
 static Eina_Bool _memos_started = EINA_FALSE;
 
+static Eo *_content_box = NULL;
+
+static void
+_my_win_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   elm_exit(); /* exit the program's main loop that runs in elm_run() */
+}
+
+static Eo *
+_button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_Cb cb_func, void *cb_data)
+{
+   Eo *bt = wref ? *wref : NULL;
+   if (!bt)
+     {
+        bt = elm_button_add(parent);
+        evas_object_size_hint_align_set(bt, EVAS_HINT_FILL, EVAS_HINT_FILL);
+        evas_object_size_hint_weight_set(bt, EVAS_HINT_EXPAND, 0.0);
+        evas_object_show(bt);
+//        if (wref) eo_wref_add(bt, wref);
+        if (cb_func) evas_object_smart_callback_add(bt, "clicked", cb_func, cb_data);
+     }
+   elm_object_text_set(bt, text);
+   elm_object_part_content_set(bt, "icon", icon);
+   return bt;
+}
+
+enum
+{
+   MEMOS_TAB
+};
+
+static void
+_tab_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   int type = (intptr_t)data;
+   Eo *content = NULL;
+   switch (type)
+     {
+      case MEMOS_TAB:
+           {
+              content = memos_ui_get(_content_box);
+              break;
+           }
+      default: break;
+     }
+   if (content)
+     {
+        elm_box_clear(_content_box);
+        elm_box_pack_end(_content_box, content);
+     }
+}
+
 EAPI_MAIN int
 elm_main()
 {
@@ -17,8 +69,38 @@ elm_main()
         return 1;
      }
 
+   Eo *win = elm_win_util_standard_add("Cuby", "Cuby");
+   evas_object_smart_callback_add(win, "delete,request", _my_win_del, NULL);
+   evas_object_resize(win, 1200, 768);
+   elm_win_maximized_set(win, EINA_TRUE);
+
+   Eo *box = elm_box_add(win);
+   evas_object_size_hint_align_set(box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   elm_win_resize_object_add(win, box);
+   evas_object_show(box);
+
+   Eo *bts_box = elm_box_add(box);
+   evas_object_size_hint_align_set(bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(bts_box, EVAS_HINT_EXPAND, 0.05);
+   elm_box_horizontal_set(bts_box, EINA_TRUE);
+   elm_box_pack_end(box, bts_box);
+   evas_object_show(bts_box);
+
+   elm_box_pack_end(bts_box, _button_create(bts_box, "Memos", NULL, NULL, _tab_show, MEMOS_TAB));
+   elm_box_pack_end(bts_box, _button_create(bts_box, "Dummy", NULL, NULL, _tab_show, -1));
+   elm_box_pack_end(bts_box, _button_create(bts_box, "Dummy", NULL, NULL, _tab_show, -1));
+
+   _content_box = elm_box_add(box);
+   evas_object_size_hint_align_set(_content_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(_content_box, EVAS_HINT_EXPAND, 0.95);
+   elm_box_pack_end(box, _content_box);
+   evas_object_show(_content_box);
+
    sprintf(path, "%s/.cuby/memos", home_dir);
    _memos_started = memos_start(path);
+
+   evas_object_show(win);
 
    elm_run();
 
