@@ -49,10 +49,10 @@ typedef struct
 
 static const Delay_Property _delay_props[] =
 {
-     {"1 minute",   DELAY_MINUTE, 1},
-     {"5 minutes",   DELAY_MINUTE, 5},
-     {"10 minutes",  DELAY_MINUTE, 10},
-     {"60 seconds",  DELAY_SECOND, 60},
+     {"Delay by 1 minute",   DELAY_MINUTE, 1},
+     {"Delay by 5 minutes",   DELAY_MINUTE, 5},
+     {"Delay by 10 minutes",  DELAY_MINUTE, 10},
+     {"Delay by 60 seconds",  DELAY_SECOND, 60},
      {NULL,          DELAY_MINUTE, 0}
 };
 
@@ -162,7 +162,7 @@ _delay_normalize(Memo *m)
 }
 
 static void
-_popup_close(void *data, Evas_Object *btn, void *event_info EINA_UNUSED)
+_popup_close(void *data, Evas_Object *obj, void *event_info EINA_UNUSED)
 {
    int choice = (intptr_t)data;
    Memo *m = efl_key_data_get(_popup, "Memo");
@@ -177,8 +177,7 @@ _popup_close(void *data, Evas_Object *btn, void *event_info EINA_UNUSED)
       case POPUP_DELAY:
            {
               int i = 0;
-              Eo *hs = efl_key_data_get(btn, "delay_hoversel");
-              const char *text = elm_object_text_get(hs);
+              const char *text = elm_object_text_get(obj);
               while (_delay_props[i].string)
                 {
                    if (!strcmp(_delay_props[i].string, text))
@@ -216,13 +215,6 @@ _popup_close(void *data, Evas_Object *btn, void *event_info EINA_UNUSED)
    evas_object_del(_popup);
 }
 
-static void
-_delay_selected(void *data EINA_UNUSED, Evas_Object *obj, void *event_info)
-{
-   const char *txt = elm_object_item_text_get(event_info);
-   elm_object_text_set(obj, txt);
-}
-
 static Eina_Bool
 _popup_show(Memo *m)
 {
@@ -241,11 +233,6 @@ _popup_show(Memo *m)
    elm_object_part_content_set(_popup, "button1", btn);
    evas_object_smart_callback_add(btn, "clicked", _popup_close, (void *)POPUP_CLOSE);
 
-   btn = elm_button_add(_popup);
-   elm_object_text_set(btn, "Delay by");
-   elm_object_part_content_set(_popup, "button2", btn);
-   evas_object_smart_callback_add(btn, "clicked", _popup_close, (void *)POPUP_DELAY);
-
    hs = elm_hoversel_add(_popup);
    elm_object_text_set(hs, _delay_props[0].string);
    i = 0;
@@ -254,8 +241,8 @@ _popup_show(Memo *m)
         elm_hoversel_item_add(hs, _delay_props[i].string, NULL, ELM_ICON_NONE, NULL, NULL);
         i++;
      }
-   evas_object_smart_callback_add(hs, "selected", _delay_selected, NULL);
-   elm_object_part_content_set(_popup, "button3", hs);
+   evas_object_smart_callback_add(hs, "selected", _popup_close, (void *)POPUP_DELAY);
+   elm_object_part_content_set(_popup, "button2", hs);
    efl_key_data_set(btn, "delay_hoversel", hs);
 
 
