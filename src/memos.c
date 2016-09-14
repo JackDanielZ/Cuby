@@ -1,3 +1,5 @@
+#define EFL_BETA_API_SUPPORT
+#include <Eo.h>
 #include <Eet.h>
 #include <Ecore.h>
 #include <Elementary.h>
@@ -22,6 +24,8 @@ typedef struct
 } Memos;
 
 static Memos *_memos = NULL;
+
+static Eo *_win = NULL, *_popup = NULL;
 
 static void
 _eet_load()
@@ -66,9 +70,82 @@ _memo_sort(const void *data1, const void *data2)
    return 0;
 }
 
+enum
+{
+   POPUP_CLOSE,
+   POPUP_DELAY
+};
+
+static void
+_popup_close(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   int choice = (intptr_t)data;
+   Memo *m = efl_key_data_get(_popup, "Memo");
+   switch (choice)
+     {
+      case POPUP_CLOSE:
+           {
+              _memos->lst = eina_list_remove(_memos->lst, m);
+              break;
+           }
+      case POPUP_DELAY:
+           {
+              break;
+           }
+      default: break;
+     }
+   evas_object_del(_popup);
+}
+
+static void
+_delay_selected(void *data EINA_UNUSED, Evas_Object *obj, void *event_info)
+{
+   const char *txt = elm_object_item_text_get(event_info);
+   elm_object_text_set(obj, txt);
+}
+
+static Eina_Bool
+_popup_show(Memo *m)
+{
+   Eo *btn, *hs;
+   if (_popup) printf("popup visible %d\n", evas_object_visible_get(_popup));
+   if (!_win || _popup) return EINA_FALSE;
+   _popup = elm_popup_add(_win);
+   efl_key_data_set(_popup, "Memo", m);
+   elm_object_text_set(_popup, m->content);
+   efl_weak_ref(&_popup);
+
+   // popup buttons
+   btn = elm_button_add(_popup);
+   elm_object_text_set(btn, "Dismiss");
+   elm_object_part_content_set(_popup, "button1", btn);
+   evas_object_smart_callback_add(btn, "clicked", _popup_close, (void *)POPUP_CLOSE);
+
+   btn = elm_button_add(_popup);
+   elm_object_text_set(btn, "Delay by");
+   elm_object_part_content_set(_popup, "button2", btn);
+   evas_object_smart_callback_add(btn, "clicked", _popup_close, (void *)POPUP_DELAY);
+
+   hs = elm_hoversel_add(_popup);
+   elm_object_text_set(hs, "5 min");
+   elm_hoversel_item_add(hs, "5 min", NULL, ELM_ICON_NONE, NULL, NULL);
+   elm_hoversel_item_add(hs, "10 min", NULL, ELM_ICON_NONE, NULL, NULL);
+   evas_object_smart_callback_add(hs, "selected", _delay_selected, NULL);
+   elm_object_part_content_set(_popup, "button3", hs);
+   efl_key_data_set(btn, "hoversel", hs);
+
+
+   // popup show should be called after adding all the contents and the buttons
+   // of popup to set the focus into popup's contents correctly.
+   evas_object_show(_popup);
+   return EINA_TRUE;
+}
+
 static Eina_Bool
 _memo_check(void *data EINA_UNUSED)
 {
+   Eina_List *itr;
+   Memo *m;
    time_t t;
    time(&t);
    struct tm *tm = localtime(&t);
@@ -76,23 +153,34 @@ _memo_check(void *data EINA_UNUSED)
          tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday,
          tm->tm_hour, tm->tm_min, tm->tm_sec);
 
-   Memo *m = eina_list_data_get(_memos->lst);
+   EINA_LIST_FOREACH(_memos->lst, itr, m)
+     {
+        if (m->year < tm->tm_year+1900) goto consume;
+        if (m->year > tm->tm_year+1900) continue;
 
-   if (m->year > tm->tm_year+1900) goto end;
-   if (m->month > tm->tm_mon+1) goto end;
-   if (m->mday > tm->tm_mday) goto end;
-   if (m->hour > tm->tm_hour) goto end;
-   if (m->minute > tm->tm_min) goto end;
+        if (m->month < tm->tm_mon+1) goto consume;
+        if (m->month > tm->tm_mon+1) continue;
 
-   printf("Need to consume %s\n", m->content);
+        if (m->mday < tm->tm_mday) goto consume;
+        if (m->mday > tm->tm_mday) continue;
 
-end:
+        if (m->hour < tm->tm_hour) goto consume;
+        if (m->hour > tm->tm_hour) continue;
+
+        if (m->minute < tm->tm_min) goto consume;
+        if (m->minute > tm->tm_min) continue;
+consume:
+        _popup_show(m);
+        printf("Need to consume %s\n", m->content);
+     }
+
    return EINA_TRUE;
 }
 
 Eina_Bool
-memos_start(const char *filename)
+memos_start(const char *filename, Eo *win)
 {
+   _win = win;
    if (!_memos) _eet_load();
    Eet_File *file = eet_open(filename, EET_FILE_MODE_READ);
    if (file)

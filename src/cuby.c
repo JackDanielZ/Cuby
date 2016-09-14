@@ -101,7 +101,7 @@ elm_main()
    mkdir(path, S_IRWXU);
 
    sprintf(path, "%s/.cuby/memos", home_dir);
-   _memos_started = memos_start(path);
+   _memos_started = memos_start(path, win);
 
    evas_object_show(win);
 
