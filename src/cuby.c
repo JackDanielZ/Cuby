@@ -97,6 +97,9 @@ elm_main()
    elm_box_pack_end(box, _content_box);
    evas_object_show(_content_box);
 
+   sprintf(path, "%s/.cuby", home_dir);
+   mkdir(path, S_IRWXU);
+
    sprintf(path, "%s/.cuby/memos", home_dir);
    _memos_started = memos_start(path);
 
