@@ -382,6 +382,7 @@ _memo_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED
    m->minute = min;
    m->content = strdup(text);
    _memos->lst = eina_list_append(_memos->lst, m);
+   _memos_write_to_file(_cfg_filename);
 
    _genlist_refresh();
    evas_object_del(_popup);
