@@ -1,5 +1,7 @@
 #include "common.h"
 
+#include <Elementary.h>
+
 char *
 line_get(const char *buffer)
 {
@@ -57,3 +59,24 @@ file_get_as_string(const char *filename)
    return file_data;
 }
 
+Eo *
+button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_Cb cb_func, void *cb_data)
+{
+   Eo *bt = wref ? *wref : NULL;
+   if (!bt)
+     {
+        bt = elm_button_add(parent);
+        evas_object_size_hint_align_set(bt, EVAS_HINT_FILL, EVAS_HINT_FILL);
+        evas_object_size_hint_weight_set(bt, EVAS_HINT_EXPAND, 0.0);
+        evas_object_show(bt);
+        if (wref)
+          {
+             *wref = bt;
+             efl_weak_ref(wref);
+          }
+        if (cb_func) evas_object_smart_callback_add(bt, "clicked", cb_func, cb_data);
+     }
+   elm_object_text_set(bt, text);
+   elm_object_part_content_set(bt, "icon", icon);
+   return bt;
+}
