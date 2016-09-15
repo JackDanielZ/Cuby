@@ -57,7 +57,7 @@ static const Delay_Property _delay_props[] =
 };
 
 static Memos *_memos = NULL;
-static Eo *_win = NULL, *_popup = NULL;
+static Eo *_win = NULL, *_popup = NULL, *_gl = NULL;
 static Eina_Stringshare *_cfg_filename = NULL;
 
 static void
@@ -337,27 +337,155 @@ _text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED
    return strdup(text);
 }
 
-Eo *
-memos_ui_get(Eo *parent)
+static void
+_genlist_refresh()
 {
-   Eo *gl = elm_genlist_add(parent);
-   evas_object_size_hint_weight_set(gl, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
-   evas_object_size_hint_align_set(gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   evas_object_show(gl);
+   static Elm_Genlist_Item_Class *itc = NULL;
+   if (!itc)
+     {
+        itc = elm_genlist_item_class_new();
+        itc->item_style = "default";
+        itc->func.text_get = _text_get;
+     }
 
-   Elm_Genlist_Item_Class *itc = elm_genlist_item_class_new();
-   itc->item_style = "default";
-   itc->func.text_get = _text_get;
-
+   elm_genlist_clear(_gl);
    Eina_List *itr;
    Memo *memo;
    EINA_LIST_FOREACH(_memos->lst, itr, memo)
      {
-        elm_genlist_item_append(gl, itc, memo, NULL,
+        elm_genlist_item_append(_gl, itc, memo, NULL,
               ELM_GENLIST_ITEM_NONE, NULL, NULL);
-        printf("%s\n", memo->content);
      }
+}
 
-   return gl;
+static void
+_memo_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED)
+{
+   Eo *entry = efl_key_data_get(obj, "memo_entry");
+   Eo *cal = efl_key_data_get(obj, "memo_calendar");
+   Eo *ck = efl_key_data_get(obj, "memo_clock");
+
+   Efl_Time tm;
+   int hour = 0, min = 0;
+   const char *text = elm_entry_entry_get(entry);
+   if (!text || !*text) text = "No title";
+
+   elm_calendar_selected_time_get(cal, &tm);
+
+   elm_clock_time_get(ck, &hour, &min, NULL);
+
+   Memo *m = calloc(1, sizeof(*m));
+   m->year = tm.tm_year+1900;
+   m->month = tm.tm_mon+1;
+   m->mday = tm.tm_mday;
+   m->hour = hour;
+   m->minute = min;
+   m->content = strdup(text);
+   _memos->lst = eina_list_append(_memos->lst, m);
+
+   _genlist_refresh();
+   evas_object_del(_popup);
+}
+
+static void
+_memo_add_show(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   time_t t;
+   time(&t);
+   struct tm *tm = localtime(&t);
+
+   _popup = elm_popup_add(_win);
+   elm_object_text_set(_popup, "Add memo");
+   efl_weak_ref(&_popup);
+
+   Eo *box = elm_box_add(_popup);
+   evas_object_size_hint_weight_set(box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_object_content_set(_popup, box);
+   evas_object_show(box);
+
+   Eo *title_box = elm_box_add(box);
+   evas_object_size_hint_weight_set(title_box, EVAS_HINT_EXPAND, 0.2);
+   evas_object_size_hint_align_set(title_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_horizontal_set(title_box, EINA_TRUE);
+   elm_box_pack_end(box, title_box);
+   evas_object_show(title_box);
+
+   Eo *title_label = elm_label_add(title_box);
+   evas_object_size_hint_weight_set(title_label, 0.2, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(title_label, 0, EVAS_HINT_FILL);
+   elm_object_text_set(title_label, "Title");
+   elm_box_pack_end(title_box, title_label);
+   evas_object_show(title_label);
+
+   Eo *entry = elm_entry_add(title_box);
+   evas_object_size_hint_weight_set(entry, 0.8, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(entry, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_entry_line_wrap_set(entry, ELM_WRAP_CHAR);
+   elm_box_pack_end(title_box, entry);
+   evas_object_show(entry);
+
+   Eo *time_box = elm_box_add(box);
+   evas_object_size_hint_weight_set(time_box, EVAS_HINT_EXPAND, 0.6);
+   evas_object_size_hint_align_set(time_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_horizontal_set(time_box, EINA_TRUE);
+   elm_box_pack_end(box, time_box);
+   evas_object_show(time_box);
+
+   Eo *cal = elm_calendar_add(time_box);
+   elm_calendar_first_day_of_week_set(cal, ELM_DAY_SUNDAY);
+   evas_object_size_hint_weight_set(cal, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   elm_box_pack_end(time_box, cal);
+   evas_object_show(cal);
+
+   Eo *ck = elm_clock_add(time_box);
+   elm_clock_time_set(ck, tm->tm_hour, tm->tm_min, 0);
+   elm_clock_edit_mode_set(ck, ELM_CLOCK_EDIT_DEFAULT);
+   elm_clock_edit_set(ck, EINA_TRUE);
+   elm_box_pack_end(time_box, ck);
+   evas_object_show(ck);
+
+   Eo *bts_box = elm_box_add(box);
+   evas_object_size_hint_weight_set(bts_box, EVAS_HINT_EXPAND, 0.2);
+   evas_object_size_hint_align_set(bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_horizontal_set(bts_box, EINA_TRUE);
+   elm_box_pack_end(box, bts_box);
+   evas_object_show(bts_box);
+
+   Eo *add_bt = button_create(bts_box, "Add", NULL, NULL, _memo_add, _popup);
+   efl_key_data_set(add_bt, "memo_entry", entry);
+   efl_key_data_set(add_bt, "memo_calendar", cal);
+   efl_key_data_set(add_bt, "memo_clock", ck);
+   elm_box_pack_end(bts_box, add_bt);
+
+   evas_object_show(_popup);
+}
+
+Eo *
+memos_ui_get(Eo *parent)
+{
+   Eo *box = elm_box_add(parent);
+   evas_object_size_hint_weight_set(box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_horizontal_set(box, EINA_TRUE);
+   evas_object_show(box);
+
+   _gl = elm_genlist_add(parent);
+   evas_object_size_hint_weight_set(_gl, 0.8, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_pack_end(box, _gl);
+   evas_object_show(_gl);
+
+   _genlist_refresh();
+
+   Eo *bts_box = elm_box_add(box);
+   evas_object_size_hint_weight_set(bts_box, 0.2, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_pack_end(box, bts_box);
+   evas_object_show(bts_box);
+
+   elm_box_pack_end(bts_box, button_create(bts_box, "Add memo", NULL, NULL, _memo_add_show, NULL));
+
+   return box;
 }
 
