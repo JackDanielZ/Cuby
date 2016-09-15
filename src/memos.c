@@ -161,6 +161,41 @@ _delay_normalize(Memo *m)
      }
 }
 
+static char *
+_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED)
+{
+   Memo *memo = data;
+   char text[1024];
+   sprintf(text, "%s: %.4d/%.2d/%.2d %.2d:%.2d:00 delayed to %.4d/%.2d/%.2d %.2d:%.2d:%.2d",
+         memo->content,
+         memo->year, memo->month, memo->mday, memo->hour, memo->minute,
+         memo->year+memo->delay_year, memo->month+memo->delay_month,
+         memo->mday+memo->delay_mday, memo->hour+memo->delay_hour,
+         memo->minute+memo->delay_minute, memo->delay_second);
+   return strdup(text);
+}
+
+static void
+_genlist_refresh()
+{
+   static Elm_Genlist_Item_Class *itc = NULL;
+   if (!itc)
+     {
+        itc = elm_genlist_item_class_new();
+        itc->item_style = "default";
+        itc->func.text_get = _text_get;
+     }
+
+   elm_genlist_clear(_gl);
+   Eina_List *itr;
+   Memo *memo;
+   EINA_LIST_FOREACH(_memos->lst, itr, memo)
+     {
+        elm_genlist_item_append(_gl, itc, memo, NULL,
+              ELM_GENLIST_ITEM_NONE, NULL, NULL);
+     }
+}
+
 static void
 _popup_close(void *data, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
@@ -172,6 +207,7 @@ _popup_close(void *data, Evas_Object *obj EINA_UNUSED, void *event_info)
            {
               _memos->lst = eina_list_remove(_memos->lst, m);
               _memos_write_to_file(_cfg_filename);
+              _genlist_refresh();
               break;
            }
       case POPUP_DELAY:
@@ -323,41 +359,6 @@ memos_start(const char *filename, Eo *win)
    return EINA_TRUE;
 }
 
-static char *
-_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED)
-{
-   Memo *memo = data;
-   char text[1024];
-   sprintf(text, "%s: %.4d/%.2d/%.2d %.2d:%.2d:00 delayed to %.4d/%.2d/%.2d %.2d:%.2d:%.2d",
-         memo->content,
-         memo->year, memo->month, memo->mday, memo->hour, memo->minute,
-         memo->year+memo->delay_year, memo->month+memo->delay_month,
-         memo->mday+memo->delay_mday, memo->hour+memo->delay_hour,
-         memo->minute+memo->delay_minute, memo->delay_second);
-   return strdup(text);
-}
-
-static void
-_genlist_refresh()
-{
-   static Elm_Genlist_Item_Class *itc = NULL;
-   if (!itc)
-     {
-        itc = elm_genlist_item_class_new();
-        itc->item_style = "default";
-        itc->func.text_get = _text_get;
-     }
-
-   elm_genlist_clear(_gl);
-   Eina_List *itr;
-   Memo *memo;
-   EINA_LIST_FOREACH(_memos->lst, itr, memo)
-     {
-        elm_genlist_item_append(_gl, itc, memo, NULL,
-              ELM_GENLIST_ITEM_NONE, NULL, NULL);
-     }
-}
-
 static void
 _memo_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED)
 {
@@ -462,6 +463,17 @@ _memo_add_show(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event
    evas_object_show(_popup);
 }
 
+static void
+_memo_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_gl);
+   if (!sel) return;
+   Memo *m = elm_object_item_data_get(sel);;
+   _memos->lst = eina_list_remove(_memos->lst, m);
+   _genlist_refresh();
+   _memos_write_to_file(_cfg_filename);
+}
+
 Eo *
 memos_ui_get(Eo *parent)
 {
@@ -486,6 +498,7 @@ memos_ui_get(Eo *parent)
    evas_object_show(bts_box);
 
    elm_box_pack_end(bts_box, button_create(bts_box, "Add memo", NULL, NULL, _memo_add_show, NULL));
+   elm_box_pack_end(bts_box, button_create(bts_box, "Del memo", NULL, NULL, _memo_del, NULL));
 
    return box;
 }
