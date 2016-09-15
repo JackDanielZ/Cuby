@@ -362,11 +362,13 @@ memos_start(const char *filename, Eo *win)
 static void
 _memo_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED)
 {
+   Efl_Time tm;
+
+   Memo *m = efl_key_data_get(obj, "memo");
    Eo *entry = efl_key_data_get(obj, "memo_entry");
    Eo *cal = efl_key_data_get(obj, "memo_calendar");
    Eo *ck = efl_key_data_get(obj, "memo_clock");
 
-   Efl_Time tm;
    int hour = 0, min = 0;
    const char *text = elm_entry_entry_get(entry);
    if (!text || !*text) text = "No title";
@@ -375,14 +377,17 @@ _memo_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED
 
    elm_clock_time_get(ck, &hour, &min, NULL);
 
-   Memo *m = calloc(1, sizeof(*m));
+   if (!m)
+     {
+        m = calloc(1, sizeof(*m));
+        _memos->lst = eina_list_append(_memos->lst, m);
+     }
    m->year = tm.tm_year+1900;
    m->month = tm.tm_mon+1;
    m->mday = tm.tm_mday;
    m->hour = hour;
    m->minute = min;
    m->content = strdup(text);
-   _memos->lst = eina_list_append(_memos->lst, m);
    _memos_write_to_file(_cfg_filename);
 
    _genlist_refresh();
@@ -390,14 +395,19 @@ _memo_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED
 }
 
 static void
-_memo_add_show(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+_memo_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
    time_t t;
    time(&t);
    struct tm *tm = localtime(&t);
+   Eina_Bool is_add = (Eina_Bool)(intptr_t)data;
+
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_gl);
+   Memo *m = !is_add ? elm_object_item_data_get(sel) : NULL;
+   if (!is_add && !m) return;
 
    _popup = elm_popup_add(_win);
-   elm_object_text_set(_popup, "Add memo");
+   elm_object_text_set(_popup, is_add?"Add memo":"Edit memo");
    efl_weak_ref(&_popup);
 
    Eo *box = elm_box_add(_popup);
@@ -454,12 +464,23 @@ _memo_add_show(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event
    elm_box_pack_end(box, bts_box);
    evas_object_show(bts_box);
 
-   Eo *add_bt = button_create(bts_box, "Add", NULL, NULL, _memo_add, _popup);
+   Eo *add_bt = button_create(bts_box, "Apply", NULL, NULL, _memo_add, _popup);
    efl_key_data_set(add_bt, "memo_entry", entry);
    efl_key_data_set(add_bt, "memo_calendar", cal);
    efl_key_data_set(add_bt, "memo_clock", ck);
    elm_box_pack_end(bts_box, add_bt);
 
+   if (m)
+     {
+        elm_entry_entry_set(entry, m->content);
+        memset(tm, 0, sizeof(Efl_Time));
+        tm->tm_year = m->year - 1900;
+        tm->tm_mon = m->month - 1;
+        tm->tm_mday = m->mday;
+        elm_calendar_selected_time_set(cal, tm);
+        elm_clock_time_set(ck, m->hour, m->minute, 0);
+        efl_key_data_set(add_bt, "memo", m);
+     }
    evas_object_show(_popup);
 }
 
@@ -497,7 +518,10 @@ memos_ui_get(Eo *parent)
    elm_box_pack_end(box, bts_box);
    evas_object_show(bts_box);
 
-   elm_box_pack_end(bts_box, button_create(bts_box, "Add memo", NULL, NULL, _memo_add_show, NULL));
+   elm_box_pack_end(bts_box,
+         button_create(bts_box, "Add memo", NULL, NULL, _memo_add_show, (void *)EINA_TRUE));
+   elm_box_pack_end(bts_box,
+         button_create(bts_box, "Edit memo", NULL, NULL, _memo_add_show, (void *)EINA_FALSE));
    elm_box_pack_end(bts_box, button_create(bts_box, "Del memo", NULL, NULL, _memo_del, NULL));
 
    return box;
