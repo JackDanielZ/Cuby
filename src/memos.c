@@ -162,7 +162,7 @@ _delay_normalize(Memo *m)
 }
 
 static void
-_popup_close(void *data, Evas_Object *obj, void *event_info EINA_UNUSED)
+_popup_close(void *data, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
    int choice = (intptr_t)data;
    Memo *m = efl_key_data_get(_popup, "Memo");
@@ -177,7 +177,7 @@ _popup_close(void *data, Evas_Object *obj, void *event_info EINA_UNUSED)
       case POPUP_DELAY:
            {
               int i = 0;
-              const char *text = elm_object_text_get(obj);
+              const char *text = elm_object_item_text_get(event_info);
               while (_delay_props[i].string)
                 {
                    if (!strcmp(_delay_props[i].string, text))
@@ -234,7 +234,7 @@ _popup_show(Memo *m)
    evas_object_smart_callback_add(btn, "clicked", _popup_close, (void *)POPUP_CLOSE);
 
    hs = elm_hoversel_add(_popup);
-   elm_object_text_set(hs, _delay_props[0].string);
+   elm_object_text_set(hs, "Delay by ...");
    i = 0;
    while (_delay_props[i].string)
      {
