@@ -4,7 +4,7 @@
 
 #include "common.h"
 
-static Eina_Bool _memos_started = EINA_FALSE;
+static Eina_Bool _memos_started = EINA_FALSE, _music_started = EINA_FALSE;
 
 static Eo *_content_box = NULL;
 
@@ -16,7 +16,8 @@ _my_win_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_in
 
 enum
 {
-   MEMOS_TAB
+   MEMOS_TAB,
+   MUSIC_TAB
 };
 
 static void
@@ -29,6 +30,11 @@ _tab_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED
       case MEMOS_TAB:
            {
               content = memos_ui_get(_content_box);
+              break;
+           }
+      case MUSIC_TAB:
+           {
+              content = music_ui_get(_content_box);
               break;
            }
       default: break;
@@ -70,7 +76,7 @@ elm_main()
    evas_object_show(bts_box);
 
    elm_box_pack_end(bts_box, button_create(bts_box, "Memos", NULL, NULL, _tab_show, (void *)MEMOS_TAB));
-   elm_box_pack_end(bts_box, button_create(bts_box, "Dummy", NULL, NULL, _tab_show, (void *)-1));
+   elm_box_pack_end(bts_box, button_create(bts_box, "Music", NULL, NULL, _tab_show, (void *)MUSIC_TAB));
    elm_box_pack_end(bts_box, button_create(bts_box, "Dummy", NULL, NULL, _tab_show, (void *)-1));
 
    _content_box = elm_box_add(box);
@@ -84,6 +90,9 @@ elm_main()
 
    sprintf(path, "%s/.cuby/memos", home_dir);
    _memos_started = memos_start(path, win);
+
+   sprintf(path, "%s/.cuby/music", home_dir);
+   _music_started = music_start(path, win);
 
    evas_object_show(win);
 
