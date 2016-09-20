@@ -60,6 +60,24 @@ file_get_as_string(const char *filename)
 }
 
 Eo *
+icon_create(Eo *parent, const char *path, Eo **wref)
+{
+   Eo *ic = wref ? *wref : NULL;
+   if (!ic)
+     {
+        ic = elm_icon_add(parent);
+        elm_icon_standard_set(ic, path);
+        evas_object_show(ic);
+        if (wref)
+          {
+             *wref = ic;
+             efl_weak_ref(wref);
+          }
+     }
+   return ic;
+}
+
+Eo *
 button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_Cb cb_func, void *cb_data)
 {
    Eo *bt = wref ? *wref : NULL;

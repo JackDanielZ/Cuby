@@ -178,19 +178,39 @@ music_start(const char *filename, Eo *win)
    return EINA_TRUE;
 }
 
+static char *
+_sl_format(double val)
+{
+   char str[100];
+   sprintf(str, "%d:%d", ((int)val) / 60, ((int)val) % 60);
+   return strdup(str);
+}
+
+static void
+_sl_label_free(char *str)
+{
+   free(str);
+}
+
 Eo *
 music_ui_get(Eo *parent)
 {
    Eo *box = elm_box_add(parent);
    evas_object_size_hint_weight_set(box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(box, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_horizontal_set(box, EINA_TRUE);
    evas_object_show(box);
 
-   _gl = elm_genlist_add(parent);
+   Eo *list_box = elm_box_add(box);
+   evas_object_size_hint_weight_set(list_box, EVAS_HINT_EXPAND, 0.9);
+   evas_object_size_hint_align_set(list_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_horizontal_set(list_box, EINA_TRUE);
+   elm_box_pack_end(box, list_box);
+   evas_object_show(list_box);
+
+   _gl = elm_genlist_add(list_box);
    evas_object_size_hint_weight_set(_gl, 0.8, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(box, _gl);
+   elm_box_pack_end(list_box, _gl);
    evas_object_show(_gl);
 
    evas_object_smart_callback_add(_gl, "expand,request", _expand_req, NULL);
@@ -200,10 +220,10 @@ music_ui_get(Eo *parent)
 
    _genlist_refresh();
 
-   Eo *bts_box = elm_box_add(box);
+   Eo *bts_box = elm_box_add(list_box);
    evas_object_size_hint_weight_set(bts_box, 0.2, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(box, bts_box);
+   elm_box_pack_end(list_box, bts_box);
    evas_object_show(bts_box);
 
 #if 0
@@ -213,6 +233,54 @@ music_ui_get(Eo *parent)
          button_create(bts_box, "Edit memo", NULL, NULL, _memo_add_show, (void *)EINA_FALSE));
    elm_box_pack_end(bts_box, button_create(bts_box, "Del memo", NULL, NULL, _memo_del, NULL));
 #endif
+
+   Eo *ply_box = elm_box_add(box);
+   evas_object_size_hint_weight_set(ply_box, EVAS_HINT_EXPAND, 0.1);
+   evas_object_size_hint_align_set(ply_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_pack_end(box, ply_box);
+   evas_object_show(ply_box);
+
+   Eo *ply_sl_box = elm_box_add(ply_box);
+   evas_object_size_hint_weight_set(ply_sl_box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(ply_sl_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_horizontal_set(ply_sl_box, EINA_TRUE);
+   elm_box_pack_end(ply_box, ply_sl_box);
+   evas_object_show(ply_sl_box);
+
+   Eo *ply_prg_lb = elm_label_add(ply_sl_box);
+   evas_object_size_hint_align_set(ply_prg_lb, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(ply_prg_lb, 0.1, EVAS_HINT_EXPAND);
+   elm_object_text_set(ply_prg_lb, "--:--");
+   elm_box_pack_end(ply_sl_box, ply_prg_lb);
+   evas_object_show(ply_prg_lb);
+
+   Eo *ply_sl = elm_slider_add(ply_sl_box);
+   elm_slider_indicator_format_function_set(ply_sl, _sl_format, _sl_label_free);
+   elm_slider_span_size_set(ply_sl, 120);
+   elm_slider_min_max_set(ply_sl, 0, 100);
+   evas_object_size_hint_align_set(ply_sl, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(ply_sl, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   elm_box_pack_end(ply_sl_box, ply_sl);
+   evas_object_show(ply_sl);
+
+   Eo *ply_total_lb = elm_label_add(ply_sl_box);
+   evas_object_size_hint_align_set(ply_total_lb, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(ply_total_lb, 0.1, EVAS_HINT_EXPAND);
+   elm_object_text_set(ply_total_lb, "--:--");
+   elm_box_pack_end(ply_sl_box, ply_total_lb);
+   evas_object_show(ply_total_lb);
+
+   Eo *ply_bts_box = elm_box_add(list_box);
+   evas_object_size_hint_weight_set(ply_bts_box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(ply_bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_horizontal_set(ply_bts_box, EINA_TRUE);
+   elm_box_pack_end(ply_box, ply_bts_box);
+   evas_object_show(ply_bts_box);
+
+   elm_box_pack_end(ply_bts_box,
+         button_create(ply_bts_box, NULL,
+            icon_create(ply_bts_box, "media-playback-start", NULL),
+            NULL, NULL, NULL));
 
    return box;
 }
