@@ -256,7 +256,6 @@ _popup_show(Memo *m)
 {
    Eo *btn, *hs;
    int i;
-   if (_popup) printf("popup visible %d\n", evas_object_visible_get(_popup));
    if (!_win || _popup) return EINA_FALSE;
    _popup = elm_popup_add(_win);
    efl_key_data_set(_popup, "Memo", m);
@@ -296,9 +295,11 @@ _memo_check(void *data EINA_UNUSED)
    time_t t;
    time(&t);
    struct tm *tm = localtime(&t);
+#if 0
    printf("%d/%d/%d %d:%d:%d\n",
          tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday,
          tm->tm_hour, tm->tm_min, tm->tm_sec);
+#endif
 
    EINA_LIST_FOREACH(_memos->lst, itr, m)
      {
@@ -321,7 +322,9 @@ _memo_check(void *data EINA_UNUSED)
         if (m->second+m->delay_second > tm->tm_sec) continue;
 consume:
         _popup_show(m);
+#if 0
         printf("Need to consume %s\n", m->content);
+#endif
      }
 
    return EINA_TRUE;
