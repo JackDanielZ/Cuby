@@ -13,6 +13,7 @@ include_directories(
    ${EO_INCLUDE_DIRS}
    ${ECORE_INCLUDE_DIRS}
    ${EVAS_INCLUDE_DIRS}
+   ${EMOTION_INCLUDE_DIRS}
    )
 
 add_executable(cuby ${SOURCES})
@@ -26,6 +27,7 @@ target_link_libraries(cuby
    ${EO_LIBRARIES}
    ${ECORE_LIBRARIES}
    ${EVAS_LIBRARIES}
+   ${EMOTION_LIBRARIES}
    ecore_file
    )
 

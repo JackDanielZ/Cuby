@@ -9,5 +9,6 @@ find_package(Eo REQUIRED)
 find_package(Efl REQUIRED)
 find_package(Evas REQUIRED)
 find_package(Elementary REQUIRED)
+find_package(Emotion REQUIRED)
 
 add_subdirectory(src)
