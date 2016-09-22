@@ -98,6 +98,8 @@ elm_main()
 
    elm_run();
 
+   if (_music_started) music_stop();
+
    return 0;
 }
 ELM_MAIN()

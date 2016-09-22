@@ -129,9 +129,9 @@ _contract_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_
 static void
 _files_scan(Music_Path *path)
 {
-   Eina_List *lst = ecore_file_ls(path->path), *itr;
-   const char *name;
-   EINA_LIST_FOREACH(lst, itr, name)
+   Eina_List *lst = ecore_file_ls(path->path);
+   char *name;
+   EINA_LIST_FREE(lst, name)
      {
         char full_path[1024];
         Music_Path *fpath = calloc(1, sizeof(*fpath));
@@ -140,6 +140,7 @@ _files_scan(Music_Path *path)
         fpath->name = eina_stringshare_add(name);
         if (ecore_file_is_dir(full_path)) _files_scan(fpath);
         path->files = eina_list_append(path->files, fpath);
+        free(name);
      }
 }
 

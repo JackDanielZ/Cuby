@@ -15,6 +15,7 @@ Eo *memos_ui_get(Eo *parent);
 
 Eina_Bool music_start(const char *filename, Eo *win);
 Eo *music_ui_get(Eo *parent);
+Eina_Bool music_stop(void);
 
 Eo *icon_create(Eo *parent, const char *path, Eo **wref);
 Eo *button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_Cb cb_func, void *cb_data);
