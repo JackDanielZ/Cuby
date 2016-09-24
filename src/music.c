@@ -30,7 +30,7 @@ static Eo *_win = NULL, *_gl = NULL;
 static Eina_Stringshare *_cfg_filename = NULL;
 static Elm_Genlist_Item_Class *_itc = NULL;
 
-static Eo *_ply_emo = NULL, *_play_total_lb = NULL, *_play_prg_lb = NULL;
+static Eo *_ply_emo = NULL, *_play_total_lb = NULL, *_play_prg_lb = NULL, *_play_prg_sl = NULL;
 static Music_Path *_file_playing = NULL;
 
 static void
@@ -153,6 +153,7 @@ _files_scan(Music_Path *path)
 Eina_Bool
 music_start(const char *filename, Eo *win)
 {
+   emotion_init();
    _win = win;
    if (!_cfg) _eet_load();
    _cfg_filename = eina_stringshare_add(filename);
@@ -208,6 +209,7 @@ music_stop(void)
              _music_path_free(path);
           }
      }
+   emotion_shutdown();
    return EINA_TRUE;
 }
 
@@ -218,6 +220,7 @@ _media_length_update(void *data EINA_UNUSED, const Efl_Event *ev)
    char str[16];
    sprintf(str, "%.2d:%.2d:%.2d", ((int)val) / 3600, (((int)val) % 3600) / 60, ((int)val) % 60);
    elm_object_text_set(_play_total_lb, str);
+   elm_slider_min_max_set(_play_prg_sl, 0, val);
 }
 
 static void
@@ -227,6 +230,17 @@ _media_position_update(void *data EINA_UNUSED, const Efl_Event *ev)
    char str[16];
    sprintf(str, "%.2d:%.2d:%.2d", ((int)val) / 3600, (((int)val) % 3600) / 60, ((int)val) % 60);
    elm_object_text_set(_play_prg_lb, str);
+   elm_slider_value_set(_play_prg_sl, val);
+}
+
+static void
+_media_finished(void *data, const Efl_Event *ev)
+{
+   _file_playing->playing = EINA_FALSE;
+   Eo *play_bt = data;
+   elm_object_part_content_set(play_bt, "icon",
+         icon_create(play_bt, "media-playback-start", NULL));
+   efl_del(ev->object);
 }
 
 static void
@@ -240,14 +254,17 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *play_bt, void *event_info EINA_
    if (!_ply_emo)
      {
         _ply_emo = emotion_object_add(play_bt);
+        efl_weak_ref(&_ply_emo);
         emotion_object_init(_ply_emo, NULL);
         efl_event_callback_add
            (_ply_emo, EMOTION_OBJECT_EVENT_LENGTH_CHANGE, _media_length_update, NULL);
         efl_event_callback_add
            (_ply_emo, EMOTION_OBJECT_EVENT_POSITION_UPDATE, _media_position_update, NULL);
+        efl_event_callback_add
+           (_ply_emo, EMOTION_OBJECT_EVENT_PLAYBACK_FINISHED, _media_finished, play_bt);
      }
 
-   if (path != _file_playing)
+   if (path != _file_playing || !_file_playing->playing)
      {
         emotion_object_play_set(_ply_emo, EINA_FALSE);
         if (_file_playing) _file_playing->playing = EINA_FALSE;
@@ -266,7 +283,7 @@ static char *
 _sl_format(double val)
 {
    char str[100];
-   sprintf(str, "%d:%d", ((int)val) / 60, ((int)val) % 60);
+   sprintf(str, "%.2d:%.2d:%.2d", ((int)val) / 3600, (((int)val) % 3600) / 60, ((int)val) % 60);
    return strdup(str);
 }
 
@@ -274,6 +291,13 @@ static void
 _sl_label_free(char *str)
 {
    free(str);
+}
+
+static void
+_sl_changed(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
+{
+   double val = elm_slider_value_get(_play_prg_sl);
+   emotion_object_position_set(_ply_emo, val);
 }
 
 Eo *
@@ -338,14 +362,15 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(ply_sl_box, _play_prg_lb);
    evas_object_show(_play_prg_lb);
 
-   Eo *ply_sl = elm_slider_add(ply_sl_box);
-   elm_slider_indicator_format_function_set(ply_sl, _sl_format, _sl_label_free);
-   elm_slider_span_size_set(ply_sl, 120);
-   elm_slider_min_max_set(ply_sl, 0, 100);
-   evas_object_size_hint_align_set(ply_sl, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   evas_object_size_hint_weight_set(ply_sl, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
-   elm_box_pack_end(ply_sl_box, ply_sl);
-   evas_object_show(ply_sl);
+   _play_prg_sl = elm_slider_add(ply_sl_box);
+   elm_slider_indicator_format_function_set(_play_prg_sl, _sl_format, _sl_label_free);
+   elm_slider_span_size_set(_play_prg_sl, 120);
+   elm_slider_min_max_set(_play_prg_sl, 0, 100);
+   efl_event_callback_add(_play_prg_sl, ELM_SLIDER_EVENT_CHANGED, _sl_changed, NULL);
+   evas_object_size_hint_align_set(_play_prg_sl, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(_play_prg_sl, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   elm_box_pack_end(ply_sl_box, _play_prg_sl);
+   evas_object_show(_play_prg_sl);
 
    _play_total_lb = elm_label_add(ply_sl_box);
    evas_object_size_hint_align_set(_play_total_lb, EVAS_HINT_FILL, EVAS_HINT_FILL);
