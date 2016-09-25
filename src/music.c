@@ -257,11 +257,11 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *play_bt, void *event_info EINA_
         efl_weak_ref(&_ply_emo);
         emotion_object_init(_ply_emo, NULL);
         efl_event_callback_add
-           (_ply_emo, EMOTION_OBJECT_EVENT_LENGTH_CHANGE, _media_length_update, NULL);
+           (_ply_emo, EFL_CANVAS_VIDEO_EVENT_LENGTH_CHANGE, _media_length_update, NULL);
         efl_event_callback_add
-           (_ply_emo, EMOTION_OBJECT_EVENT_POSITION_UPDATE, _media_position_update, NULL);
+           (_ply_emo, EFL_CANVAS_VIDEO_EVENT_POSITION_CHANGE, _media_position_update, NULL);
         efl_event_callback_add
-           (_ply_emo, EMOTION_OBJECT_EVENT_PLAYBACK_FINISHED, _media_finished, play_bt);
+           (_ply_emo, EFL_CANVAS_VIDEO_EVENT_PLAYBACK_STOP, _media_finished, play_bt);
      }
 
    if (path != _file_playing || !_file_playing->playing)
