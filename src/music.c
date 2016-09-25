@@ -26,7 +26,7 @@ typedef struct
 } Music_Cfg;
 
 static Music_Cfg *_cfg = NULL;
-static Eo *_win = NULL, *_gl = NULL;
+static Eo *_win = NULL, *_gl = NULL, *_popup = NULL;
 static Eina_Stringshare *_cfg_filename = NULL;
 static Elm_Genlist_Item_Class *_itc = NULL;
 
@@ -147,6 +147,17 @@ _files_scan(Music_Path *path)
         if (ecore_file_is_dir(full_path)) _files_scan(fpath);
         path->files = eina_list_append(path->files, fpath);
         free(name);
+     }
+}
+
+static void
+_files_list_clear(Music_Path *path)
+{
+   Music_Path *fpath;
+   EINA_LIST_FREE(path->files, fpath)
+     {
+        _files_list_clear(fpath);
+        free(fpath);
      }
 }
 
@@ -300,6 +311,108 @@ _sl_changed(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
    emotion_object_position_set(_ply_emo, val);
 }
 
+static void
+_dir_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED)
+{
+   Music_Path *m = efl_key_data_get(obj, "mpath");
+   Eo *entry = efl_key_data_get(obj, "entry");
+   Eo *fs_entry = efl_key_data_get(obj, "fs_entry");
+
+   if (!m)
+     {
+        m = calloc(1, sizeof(*m));
+        _cfg->paths_lst = eina_list_append(_cfg->paths_lst, m);
+     }
+   if (m->path) eina_stringshare_del(m->path);
+   m->path = eina_stringshare_add(elm_fileselector_path_get(fs_entry));
+   if (m->name) eina_stringshare_del(m->name);
+   const char *name = elm_entry_entry_get(entry);
+   if (!name || !*name) name = "No name";
+   m->name = eina_stringshare_add(name);
+   _write_to_file(_cfg_filename);
+
+   _files_list_clear(m);
+   _files_scan(m);
+   _genlist_refresh();
+   evas_object_del(_popup);
+}
+
+static void
+_dir_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   Eina_Bool is_add = (Eina_Bool)(intptr_t)data;
+
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_gl);
+   Music_Path *m = !is_add ? elm_object_item_data_get(sel) : NULL;
+   if (!is_add && !m) return;
+
+   _popup = elm_popup_add(_win);
+   elm_object_text_set(_popup, is_add?"Add directory":"Edit directory");
+   efl_weak_ref(&_popup);
+
+   Eo *box = elm_box_add(_popup);
+   evas_object_size_hint_weight_set(box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_object_content_set(_popup, box);
+   evas_object_show(box);
+
+   Eo *title_box = elm_box_add(box);
+   evas_object_size_hint_weight_set(title_box, EVAS_HINT_EXPAND, 0.2);
+   evas_object_size_hint_align_set(title_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_horizontal_set(title_box, EINA_TRUE);
+   elm_box_pack_end(box, title_box);
+   evas_object_show(title_box);
+
+   Eo *title_label = elm_label_add(title_box);
+   evas_object_size_hint_weight_set(title_label, 0.2, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(title_label, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_object_text_set(title_label, "Title");
+   elm_box_pack_end(title_box, title_label);
+   evas_object_show(title_label);
+
+   Eo *entry = elm_entry_add(title_box);
+   evas_object_size_hint_weight_set(entry, 0.8, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(entry, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_entry_line_wrap_set(entry, ELM_WRAP_CHAR);
+   elm_box_pack_end(title_box, entry);
+   evas_object_show(entry);
+
+   Eo *ic = elm_icon_add(box);
+   elm_icon_standard_set(ic, "file");
+   evas_object_size_hint_aspect_set(ic, EVAS_ASPECT_CONTROL_VERTICAL, 1, 1);
+   Eo *fs_entry = elm_fileselector_entry_add(box);
+   elm_object_part_content_set(fs_entry, "button icon", ic);
+   evas_object_size_hint_weight_set(fs_entry, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(fs_entry, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_show(fs_entry);
+   elm_box_pack_end(box, fs_entry);
+
+   Eo *add_bt = button_create(box, "Apply", NULL, NULL, _dir_add, NULL);
+   efl_key_data_set(add_bt, "entry", entry);
+   efl_key_data_set(add_bt, "fs_entry", fs_entry);
+   elm_box_pack_end(box, add_bt);
+
+   if (m)
+     {
+        elm_entry_entry_set(entry, m->name);
+        elm_fileselector_path_set(fs_entry, m->path);
+        efl_key_data_set(add_bt, "mpath", m);
+     }
+   evas_object_show(_popup);
+}
+
+static void
+_dir_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_gl);
+   if (!sel) return;
+   Music_Path *m = elm_object_item_data_get(sel);
+   _files_list_clear(m);
+   _cfg->paths_lst = eina_list_remove(_cfg->paths_lst, m);
+   _genlist_refresh();
+   _write_to_file(_cfg_filename);
+}
+
 Eo *
 music_ui_get(Eo *parent)
 {
@@ -334,13 +447,11 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(list_box, bts_box);
    evas_object_show(bts_box);
 
-#if 0
    elm_box_pack_end(bts_box,
-         button_create(bts_box, "Add memo", NULL, NULL, _memo_add_show, (void *)EINA_TRUE));
+         button_create(bts_box, "Add directory", NULL, NULL, _dir_add_show, (void *)EINA_TRUE));
    elm_box_pack_end(bts_box,
-         button_create(bts_box, "Edit memo", NULL, NULL, _memo_add_show, (void *)EINA_FALSE));
-   elm_box_pack_end(bts_box, button_create(bts_box, "Del memo", NULL, NULL, _memo_del, NULL));
-#endif
+         button_create(bts_box, "Edit directory", NULL, NULL, _dir_add_show, (void *)EINA_FALSE));
+   elm_box_pack_end(bts_box, button_create(bts_box, "Del memo", NULL, NULL, _dir_del, NULL));
 
    Eo *ply_box = elm_box_add(box);
    evas_object_size_hint_weight_set(ply_box, EVAS_HINT_EXPAND, 0.1);
