@@ -448,12 +448,15 @@ _memo_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_U
    evas_object_show(time_box);
 
    Eo *cal = elm_calendar_add(time_box);
-   elm_calendar_first_day_of_week_set(cal, ELM_DAY_SUNDAY);
    evas_object_size_hint_weight_set(cal, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(cal, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_calendar_first_day_of_week_set(cal, ELM_DAY_SUNDAY);
    elm_box_pack_end(time_box, cal);
    evas_object_show(cal);
 
    Eo *ck = elm_clock_add(time_box);
+   evas_object_size_hint_weight_set(ck, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(ck, EVAS_HINT_FILL, EVAS_HINT_FILL);
    elm_clock_time_set(ck, tm->tm_hour, tm->tm_min, 0);
    elm_clock_edit_mode_set(ck, ELM_CLOCK_EDIT_DEFAULT);
    elm_clock_edit_set(ck, EINA_TRUE);
