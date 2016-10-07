@@ -398,6 +398,12 @@ _memo_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED
 }
 
 static void
+_memo_cancel(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   evas_object_del(_popup);
+}
+
+static void
 _memo_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
    time_t t;
@@ -470,11 +476,13 @@ _memo_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_U
    elm_box_pack_end(box, bts_box);
    evas_object_show(bts_box);
 
-   Eo *add_bt = button_create(bts_box, "Apply", NULL, NULL, _memo_add, _popup);
+   Eo *add_bt = button_create(bts_box, "Apply", NULL, NULL, _memo_add, NULL);
    efl_key_data_set(add_bt, "memo_entry", entry);
    efl_key_data_set(add_bt, "memo_calendar", cal);
    efl_key_data_set(add_bt, "memo_clock", ck);
    elm_box_pack_end(bts_box, add_bt);
+   Eo *cancel_bt = button_create(bts_box, "Cancel", NULL, NULL, _memo_cancel, NULL);
+   elm_box_pack_end(bts_box, cancel_bt);
 
    if (m)
      {
