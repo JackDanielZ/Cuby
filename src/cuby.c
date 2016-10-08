@@ -6,7 +6,15 @@
 
 static Eina_Bool _memos_started = EINA_FALSE, _music_started = EINA_FALSE;
 
+enum
+{
+   NO_TAB,
+   MEMOS_TAB,
+   MUSIC_TAB
+};
+
 static Eo *_content_box = NULL;
+static int _current_tab = NO_TAB;
 
 static void
 _my_win_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
@@ -14,17 +22,13 @@ _my_win_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_in
    elm_exit(); /* exit the program's main loop that runs in elm_run() */
 }
 
-enum
-{
-   MEMOS_TAB,
-   MUSIC_TAB
-};
-
 static void
 _tab_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
    int type = (intptr_t)data;
    Eo *content = NULL;
+   if (type == _current_tab) return;
+   _current_tab = type;
    switch (type)
      {
       case MEMOS_TAB:
