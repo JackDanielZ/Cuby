@@ -456,7 +456,7 @@ music_ui_get(Eo *parent)
          button_create(bts_box, "Add directory", NULL, NULL, _dir_add_show, (void *)EINA_TRUE));
    elm_box_pack_end(bts_box,
          button_create(bts_box, "Edit directory", NULL, NULL, _dir_add_show, (void *)EINA_FALSE));
-   elm_box_pack_end(bts_box, button_create(bts_box, "Del memo", NULL, NULL, _dir_del, NULL));
+   elm_box_pack_end(bts_box, button_create(bts_box, "Delete directory", NULL, NULL, _dir_del, NULL));
 
    Eo *ply_box = elm_box_add(box);
    evas_object_size_hint_weight_set(ply_box, EVAS_HINT_EXPAND, 0.1);
