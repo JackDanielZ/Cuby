@@ -26,9 +26,11 @@ typedef struct
 } Music_Cfg;
 
 static Music_Cfg *_cfg = NULL;
-static Eo *_win = NULL, *_gl = NULL, *_popup = NULL;
+static Eo *_win = NULL, *_paths_gl = NULL, *_popup = NULL;
 static Eina_Stringshare *_cfg_filename = NULL;
 static Elm_Genlist_Item_Class *_itc = NULL;
+
+static Eo *_playlist_gl = NULL;
 
 static Eo *_ply_emo = NULL, *_play_total_lb = NULL, *_play_prg_lb = NULL, *_play_prg_sl = NULL;
 static Eo *_play_bt = NULL;
@@ -73,7 +75,7 @@ _text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED
 }
 
 static void
-_genlist_refresh()
+_paths_genlist_refresh()
 {
    if (!_itc)
      {
@@ -82,12 +84,12 @@ _genlist_refresh()
         _itc->func.text_get = _text_get;
      }
 
-   elm_genlist_clear(_gl);
+   elm_genlist_clear(_paths_gl);
    Eina_List *itr;
    Music_Path *path;
    EINA_LIST_FOREACH(_cfg->paths_lst, itr, path)
      {
-        Elm_Object_Item *it = elm_genlist_item_append(_gl, _itc, path, NULL,
+        Elm_Object_Item *it = elm_genlist_item_append(_paths_gl, _itc, path, NULL,
               path->files?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
               NULL, NULL);
         elm_genlist_item_expanded_set(it, path->expanded);
@@ -103,7 +105,7 @@ _expand(void *data EINA_UNUSED, Evas_Object *cont EINA_UNUSED, void *event_info)
    path->expanded = EINA_TRUE;
    EINA_LIST_FOREACH(path->files, itr, path)
      {
-        Elm_Object_Item *it = elm_genlist_item_append(_gl, _itc, path, glit,
+        Elm_Object_Item *it = elm_genlist_item_append(_paths_gl, _itc, path, glit,
               path->files?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
               NULL, NULL);
         elm_genlist_item_expanded_set(it, path->expanded);
@@ -205,7 +207,7 @@ _media_finished(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
 static void
 _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
-   Elm_Object_Item *sel = elm_genlist_selected_item_get(_gl);
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_paths_gl);
    Music_Path *path = sel ? elm_object_item_data_get(sel) : NULL;
 
    /* The selected path is different of the played path */
@@ -273,7 +275,7 @@ _dir_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED)
 
    _files_list_clear(m);
    _files_scan(m);
-   _genlist_refresh();
+   _paths_genlist_refresh();
    evas_object_del(_popup);
 }
 
@@ -282,7 +284,7 @@ _dir_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UN
 {
    Eina_Bool is_add = (Eina_Bool)(intptr_t)data;
 
-   Elm_Object_Item *sel = elm_genlist_selected_item_get(_gl);
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_paths_gl);
    Music_Path *m = !is_add ? elm_object_item_data_get(sel) : NULL;
    if (!is_add && !m) return;
 
@@ -344,12 +346,12 @@ _dir_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UN
 static void
 _dir_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
-   Elm_Object_Item *sel = elm_genlist_selected_item_get(_gl);
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_paths_gl);
    if (!sel) return;
    Music_Path *m = elm_object_item_data_get(sel);
    _files_list_clear(m);
    _cfg->paths_lst = eina_list_remove(_cfg->paths_lst, m);
-   _genlist_refresh();
+   _paths_genlist_refresh();
    _write_to_file(_cfg_filename);
 }
 
@@ -433,23 +435,17 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(box, list_box);
    evas_object_show(list_box);
 
-   _gl = elm_genlist_add(list_box);
-   evas_object_size_hint_weight_set(_gl, 0.8, EVAS_HINT_EXPAND);
-   evas_object_size_hint_align_set(_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(list_box, _gl);
-   evas_object_show(_gl);
+   Eo *paths_box = elm_box_add(list_box);
+   evas_object_size_hint_weight_set(paths_box, 0.5, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(paths_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_pack_end(list_box, paths_box);
+   evas_object_show(paths_box);
 
-   evas_object_smart_callback_add(_gl, "expand,request", _expand_req, NULL);
-   evas_object_smart_callback_add(_gl, "contract,request", _contract_req, NULL);
-   evas_object_smart_callback_add(_gl, "expanded", _expand, NULL);
-   evas_object_smart_callback_add(_gl, "contracted", _contract, NULL);
-
-   _genlist_refresh();
-
-   Eo *bts_box = elm_box_add(list_box);
-   evas_object_size_hint_weight_set(bts_box, 0.2, EVAS_HINT_EXPAND);
+   Eo *bts_box = elm_box_add(paths_box);
+   elm_box_horizontal_set(bts_box, EINA_TRUE);
+   evas_object_size_hint_weight_set(bts_box, EVAS_HINT_EXPAND, 0.05);
    evas_object_size_hint_align_set(bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(list_box, bts_box);
+   elm_box_pack_end(paths_box, bts_box);
    evas_object_show(bts_box);
 
    elm_box_pack_end(bts_box,
@@ -457,6 +453,25 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(bts_box,
          button_create(bts_box, "Edit directory", NULL, NULL, _dir_add_show, (void *)EINA_FALSE));
    elm_box_pack_end(bts_box, button_create(bts_box, "Delete directory", NULL, NULL, _dir_del, NULL));
+
+   _paths_gl = elm_genlist_add(paths_box);
+   evas_object_size_hint_weight_set(_paths_gl, EVAS_HINT_EXPAND, 0.95);
+   evas_object_size_hint_align_set(_paths_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_pack_end(paths_box, _paths_gl);
+   evas_object_show(_paths_gl);
+
+   evas_object_smart_callback_add(_paths_gl, "expand,request", _expand_req, NULL);
+   evas_object_smart_callback_add(_paths_gl, "contract,request", _contract_req, NULL);
+   evas_object_smart_callback_add(_paths_gl, "expanded", _expand, NULL);
+   evas_object_smart_callback_add(_paths_gl, "contracted", _contract, NULL);
+
+   _paths_genlist_refresh();
+
+   _playlist_gl = elm_genlist_add(list_box);
+   evas_object_size_hint_weight_set(_playlist_gl, 0.5, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(_playlist_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_pack_end(list_box, _playlist_gl);
+   evas_object_show(_playlist_gl);
 
    Eo *ply_box = elm_box_add(box);
    evas_object_size_hint_weight_set(ply_box, EVAS_HINT_EXPAND, 0.1);
@@ -497,7 +512,7 @@ music_ui_get(Eo *parent)
    efl_weak_ref(&_play_total_lb);
    evas_object_show(_play_total_lb);
 
-   Eo *ply_bts_box = elm_box_add(list_box);
+   Eo *ply_bts_box = elm_box_add(ply_box);
    evas_object_size_hint_weight_set(ply_bts_box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(ply_bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
    elm_box_horizontal_set(ply_bts_box, EINA_TRUE);
