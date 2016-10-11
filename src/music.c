@@ -423,11 +423,13 @@ music_stop(void)
 Eo *
 music_ui_get(Eo *parent)
 {
+   /* Main box */
    Eo *box = elm_box_add(parent);
    evas_object_size_hint_weight_set(box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(box, EVAS_HINT_FILL, EVAS_HINT_FILL);
    evas_object_show(box);
 
+   /* Paths and playlist box */
    Eo *list_box = elm_box_add(box);
    evas_object_size_hint_weight_set(list_box, EVAS_HINT_EXPAND, 0.9);
    evas_object_size_hint_align_set(list_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
@@ -435,12 +437,14 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(box, list_box);
    evas_object_show(list_box);
 
+   /* Paths box */
    Eo *paths_box = elm_box_add(list_box);
    evas_object_size_hint_weight_set(paths_box, 0.5, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(paths_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
    elm_box_pack_end(list_box, paths_box);
    evas_object_show(paths_box);
 
+   /* Add/del/edit dirs buttons box */
    Eo *bts_box = elm_box_add(paths_box);
    elm_box_horizontal_set(bts_box, EINA_TRUE);
    evas_object_size_hint_weight_set(bts_box, EVAS_HINT_EXPAND, 0.05);
@@ -448,12 +452,14 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(paths_box, bts_box);
    evas_object_show(bts_box);
 
+   /* Add/del/edit dirs buttons */
    elm_box_pack_end(bts_box,
          button_create(bts_box, "Add directory", NULL, NULL, _dir_add_show, (void *)EINA_TRUE));
    elm_box_pack_end(bts_box,
          button_create(bts_box, "Edit directory", NULL, NULL, _dir_add_show, (void *)EINA_FALSE));
    elm_box_pack_end(bts_box, button_create(bts_box, "Delete directory", NULL, NULL, _dir_del, NULL));
 
+   /* Paths genlist */
    _paths_gl = elm_genlist_add(paths_box);
    evas_object_size_hint_weight_set(_paths_gl, EVAS_HINT_EXPAND, 0.95);
    evas_object_size_hint_align_set(_paths_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
@@ -467,18 +473,21 @@ music_ui_get(Eo *parent)
 
    _paths_genlist_refresh();
 
+   /* Playlist genlist */
    _playlist_gl = elm_genlist_add(list_box);
    evas_object_size_hint_weight_set(_playlist_gl, 0.5, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(_playlist_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
    elm_box_pack_end(list_box, _playlist_gl);
    evas_object_show(_playlist_gl);
 
+   /* Player vertical box */
    Eo *ply_box = elm_box_add(box);
    evas_object_size_hint_weight_set(ply_box, EVAS_HINT_EXPAND, 0.1);
    evas_object_size_hint_align_set(ply_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
    elm_box_pack_end(box, ply_box);
    evas_object_show(ply_box);
 
+   /* Player slider horizontal box */
    Eo *ply_sl_box = elm_box_add(ply_box);
    evas_object_size_hint_weight_set(ply_sl_box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(ply_sl_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
@@ -486,6 +495,7 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(ply_box, ply_sl_box);
    evas_object_show(ply_sl_box);
 
+   /* Label showing music progress */
    _play_prg_lb = elm_label_add(ply_sl_box);
    evas_object_size_hint_align_set(_play_prg_lb, EVAS_HINT_FILL, EVAS_HINT_FILL);
    evas_object_size_hint_weight_set(_play_prg_lb, 0.1, EVAS_HINT_EXPAND);
@@ -494,6 +504,7 @@ music_ui_get(Eo *parent)
    efl_weak_ref(&_play_prg_lb);
    evas_object_show(_play_prg_lb);
 
+   /* Slider showing music progress */
    _play_prg_sl = elm_slider_add(ply_sl_box);
    elm_slider_indicator_format_function_set(_play_prg_sl, _sl_format, _sl_label_free);
    elm_slider_span_size_set(_play_prg_sl, 120);
@@ -504,6 +515,7 @@ music_ui_get(Eo *parent)
    efl_weak_ref(&_play_prg_sl);
    evas_object_show(_play_prg_sl);
 
+   /* Label showing total music time */
    _play_total_lb = elm_label_add(ply_sl_box);
    evas_object_size_hint_align_set(_play_total_lb, EVAS_HINT_FILL, EVAS_HINT_FILL);
    evas_object_size_hint_weight_set(_play_total_lb, 0.1, EVAS_HINT_EXPAND);
@@ -512,6 +524,7 @@ music_ui_get(Eo *parent)
    efl_weak_ref(&_play_total_lb);
    evas_object_show(_play_total_lb);
 
+   /* Player buttons box */
    Eo *ply_bts_box = elm_box_add(ply_box);
    evas_object_size_hint_weight_set(ply_bts_box, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
    evas_object_size_hint_align_set(ply_bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
@@ -519,6 +532,7 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(ply_box, ply_bts_box);
    evas_object_show(ply_bts_box);
 
+   /* Play/pause button */
    _play_bt = button_create(ply_bts_box, NULL,
          icon_create(ply_bts_box,
             _file_playing && _file_playing->playing?"media-playback-pause":"media-playback-start", NULL),
