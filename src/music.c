@@ -40,6 +40,7 @@ typedef struct
 } Music_Cfg;
 
 static Music_Cfg *_cfg = NULL;
+static Eina_Hash *_full_paths_hash = NULL;
 
 static Eo *_win = NULL, *_libraries_gl = NULL, *_popup = NULL;
 static Eina_Stringshare *_cfg_filename = NULL;
@@ -51,6 +52,8 @@ static Playlist *_current_playlist = NULL;
 static Eo *_ply_emo = NULL, *_play_total_lb = NULL, *_play_prg_lb = NULL, *_play_prg_sl = NULL;
 static Eo *_play_bt = NULL;
 static Music_Library *_file_playing = NULL;
+
+static Eo *_selected_gl = NULL;
 
 static void
 _eet_load()
@@ -161,6 +164,15 @@ _contract_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_
 }
 
 static void
+_gl_selected(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   if (_selected_gl == data) return;
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_selected_gl);
+   elm_genlist_item_selected_set(sel, EINA_FALSE);
+   _selected_gl = data;
+}
+
+static void
 _files_scan(Music_Library *mlib)
 {
    Eina_List *lst = ecore_file_ls(mlib->path);
@@ -172,6 +184,7 @@ _files_scan(Music_Library *mlib)
         sprintf(full_path, "%s/%s", mlib->path, name);
         fpath->path = eina_stringshare_add(full_path);
         fpath->name = eina_stringshare_add(name);
+        eina_hash_set(_full_paths_hash, fpath->path, fpath);
         if (ecore_file_is_dir(full_path)) _files_scan(fpath);
         mlib->files = eina_list_append(mlib->files, fpath);
         free(name);
@@ -232,8 +245,21 @@ _media_finished(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
 static void
 _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
-   Elm_Object_Item *sel = elm_genlist_selected_item_get(_libraries_gl);
-   Music_Library *mlib = sel ? elm_object_item_data_get(sel) : NULL;
+   if (!_selected_gl) return;
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_selected_gl);
+   Music_Library *mlib = NULL;
+   if (sel)
+     {
+        if (_selected_gl == _libraries_gl)
+          {
+             mlib = elm_object_item_data_get(sel);
+          }
+        if (_selected_gl == _playlist_gl)
+          {
+             Playlist_File *pf = elm_object_item_data_get(sel);
+             if (pf) mlib = pf->mlib;
+          }
+     }
 
    /* The selected path is different of the played path */
    if (mlib && mlib != _file_playing)
@@ -249,12 +275,15 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
    if ((int)emotion_object_position_get(_ply_emo) == (int)emotion_object_play_length_get(_ply_emo))
       emotion_object_position_set(_ply_emo, 0);
 
-   _file_playing->playing = !_file_playing->playing;
-   emotion_object_play_set(_ply_emo, _file_playing->playing?EINA_TRUE:EINA_FALSE);
-   elm_object_part_content_set(_play_bt, "icon",
-         icon_create(_play_bt,
-            _file_playing->playing?"media-playback-pause":"media-playback-start",
-            NULL));
+   if (_file_playing)
+     {
+        _file_playing->playing = !_file_playing->playing;
+        emotion_object_play_set(_ply_emo, _file_playing->playing?EINA_TRUE:EINA_FALSE);
+        elm_object_part_content_set(_play_bt, "icon",
+              icon_create(_play_bt,
+                 _file_playing->playing?"media-playback-pause":"media-playback-start",
+                 NULL));
+     }
 }
 
 static char *
@@ -468,7 +497,9 @@ music_start(const char *filename, Eo *win)
            (_ply_emo, EFL_CANVAS_VIDEO_EVENT_PLAYBACK_STOP, _media_finished, NULL);
      }
 
-   Eina_List *itr;
+   _full_paths_hash = eina_hash_stringshared_new(NULL);
+
+   Eina_List *itr, *itr2;
    Music_Library *mlib;
    EINA_LIST_FOREACH(_cfg->libraries, itr, mlib)
      {
@@ -477,11 +508,17 @@ music_start(const char *filename, Eo *win)
 
    EINA_LIST_FOREACH(_cfg->playlists, itr, pl)
      {
+        Playlist_File *pfile;
+        EINA_LIST_FOREACH(pl->files, itr2, pfile)
+          {
+             pfile->mlib = eina_hash_find(_full_paths_hash, pfile->path);
+          }
         if (!strcmp(pl->name, _cfg->current_playlist))
           {
              _current_playlist = pl;
           }
      }
+
    return EINA_TRUE;
 }
 
@@ -496,6 +533,8 @@ music_stop(void)
              _music_library_free(mlib);
           }
      }
+   eina_hash_free(_full_paths_hash);
+   _full_paths_hash = NULL;
    efl_del(_ply_emo);
    emotion_shutdown();
    return EINA_TRUE;
@@ -546,11 +585,13 @@ music_ui_get(Eo *parent)
    evas_object_size_hint_align_set(_libraries_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
    elm_box_pack_end(libraries_box, _libraries_gl);
    evas_object_show(_libraries_gl);
+   efl_wref_add(_libraries_gl, &_selected_gl);
 
    evas_object_smart_callback_add(_libraries_gl, "expand,request", _expand_req, NULL);
    evas_object_smart_callback_add(_libraries_gl, "contract,request", _contract_req, NULL);
    evas_object_smart_callback_add(_libraries_gl, "expanded", _expand, NULL);
    evas_object_smart_callback_add(_libraries_gl, "contracted", _contract, NULL);
+   evas_object_smart_callback_add(_libraries_gl, "selected", _gl_selected, _libraries_gl);
 
    _libraries_genlist_refresh();
 
@@ -588,6 +629,8 @@ music_ui_get(Eo *parent)
    evas_object_size_hint_align_set(_playlist_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
    elm_box_pack_end(playlist_box, _playlist_gl);
    evas_object_show(_playlist_gl);
+   evas_object_smart_callback_add(_playlist_gl, "selected", _gl_selected, _playlist_gl);
+   efl_wref_add(_playlist_gl, &_selected_gl);
 
    _playlist_genlist_refresh();
 
