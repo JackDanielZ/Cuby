@@ -85,7 +85,8 @@ button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_Cb c
      {
         bt = elm_button_add(parent);
         evas_object_size_hint_align_set(bt, EVAS_HINT_FILL, EVAS_HINT_FILL);
-        evas_object_size_hint_weight_set(bt, EVAS_HINT_EXPAND, 0.0);
+        if (!icon) evas_object_size_hint_weight_set(bt, EVAS_HINT_EXPAND, 0.0);
+        else evas_object_size_hint_weight_set(bt, 0.0, 0.0);
         evas_object_show(bt);
         if (wref)
           {
