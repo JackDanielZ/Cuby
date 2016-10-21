@@ -10,48 +10,57 @@
 
 static Eet_Data_Descriptor *_music_edd = NULL;
 
+typedef enum
+{
+   MEDIA_LIBRARY,
+   MEDIA_PLAYLIST,
+   MEDIA_URI
+} Media_Type;
+
+
+/*
+ * Library:
+ *    Name given by the user
+ *    Path local path
+ *    List of dynamic URI elements
+ * Playlist:
+ *    Name given by the user
+ *    Path - none
+ *    List of static URI elements
+ * URI:
+ *    Name: filename
+ *    Path: absolute path
+ *    Dynamic list for library
+ *    No static list
+ */
 typedef struct
 {
+   Media_Type type;
    const char *name;
    const char *path;
+   Eina_List *static_elts;
    /* Not in eet */
-   Eina_List *files;
-   Eina_Bool expanded:1;
-   Eina_Bool playing:1;
-} Music_Library;
+   // Media_Element *link; /* Link to another element - useful for playlists files */
+   Eina_List *dynamic_elts;
+   Eina_Bool expanded : 1;
+   Eina_Bool playing : 1;
+} Media_Element;
 
 typedef struct
 {
-   const char *path;
-   Music_Library *mlib;
-} Playlist_File;
-
-typedef struct
-{
-   const char *name;
-   Eina_List *files; /* List of Playlist_File */
-} Playlist;
-
-typedef struct
-{
-   Eina_List *libraries; /* List of Music_Library */
-   Eina_List *playlists; /* List of Playlist */
-   const char *current_playlist;
+   Eina_List *elements; /* List of Media_Element */
 } Music_Cfg;
 
 static Music_Cfg *_cfg = NULL;
 static Eina_Hash *_full_paths_hash = NULL;
 
-static Eo *_win = NULL, *_libraries_gl = NULL, *_popup = NULL;
+static Eo *_win = NULL, *_media_gl = NULL, *_popup = NULL;
 static Eina_Stringshare *_cfg_filename = NULL;
-static Elm_Genlist_Item_Class *_libraries_itc = NULL, *_playlist_itc = NULL;
-
-static Eo *_playlist_gl = NULL;
-static Playlist *_current_playlist = NULL;
+static Elm_Genlist_Item_Class *_media_itc = NULL;
 
 static Eo *_ply_emo = NULL, *_play_total_lb = NULL, *_play_prg_lb = NULL, *_play_prg_sl = NULL;
 static Eo *_play_bt = NULL;
-static Music_Library *_file_playing = NULL;
+static Media_Element *_file_playing = NULL;
 
 static Eo *_selected_gl = NULL;
 
@@ -61,29 +70,18 @@ _eet_load()
    Eet_Data_Descriptor_Class eddc;
    if (!_music_edd)
      {
-        /* Music Library */
-        EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Music_Library);
-        Eet_Data_Descriptor *music_library_edd = eet_data_descriptor_stream_new(&eddc);
-        EET_DATA_DESCRIPTOR_ADD_BASIC(music_library_edd, Music_Library, "name", name, EET_T_STRING);
-        EET_DATA_DESCRIPTOR_ADD_BASIC(music_library_edd, Music_Library, "path", path, EET_T_STRING);
-
-        /* Playlist File */
-        EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Playlist_File);
-        Eet_Data_Descriptor *playlist_file_edd = eet_data_descriptor_stream_new(&eddc);
-        EET_DATA_DESCRIPTOR_ADD_BASIC(playlist_file_edd, Playlist_File, "path", path, EET_T_STRING);
-
-        /* Playlist */
-        EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Playlist);
-        Eet_Data_Descriptor *playlist_edd = eet_data_descriptor_stream_new(&eddc);
-        EET_DATA_DESCRIPTOR_ADD_BASIC(playlist_edd, Playlist, "name", name, EET_T_STRING);
-        EET_DATA_DESCRIPTOR_ADD_LIST(playlist_edd, Playlist, "files", files, playlist_file_edd);
+        /* Media Element */
+        EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Media_Element);
+        Eet_Data_Descriptor *media_element_edd = eet_data_descriptor_stream_new(&eddc);
+        EET_DATA_DESCRIPTOR_ADD_BASIC(media_element_edd, Media_Element, "name", name, EET_T_STRING);
+        EET_DATA_DESCRIPTOR_ADD_BASIC(media_element_edd, Media_Element, "path", path, EET_T_STRING);
+        EET_DATA_DESCRIPTOR_ADD_BASIC(media_element_edd, Media_Element, "type", type, EET_T_UINT);
+        EET_DATA_DESCRIPTOR_ADD_LIST(media_element_edd, Media_Element, "static_elts", static_elts, media_element_edd);
 
         /* Music Cfg */
         EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Music_Cfg);
         _music_edd = eet_data_descriptor_stream_new(&eddc);
-        EET_DATA_DESCRIPTOR_ADD_LIST(_music_edd, Music_Cfg, "libraries", libraries, music_library_edd);
-        EET_DATA_DESCRIPTOR_ADD_LIST(_music_edd, Music_Cfg, "playlists", playlists, playlist_edd);
-        EET_DATA_DESCRIPTOR_ADD_BASIC(_music_edd, Music_Cfg, "current_playlist", current_playlist, EET_T_STRING);
+        EET_DATA_DESCRIPTOR_ADD_LIST(_music_edd, Music_Cfg, "elements", elements, media_element_edd);
      }
 }
 
@@ -96,31 +94,31 @@ _write_to_file(const char *filename)
 }
 
 static char *
-_libraries_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED)
+_media_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED)
 {
-   Music_Library *mlib = data;
-   return strdup(mlib->name?mlib->name:mlib->path);
+   Media_Element *melt = data;
+   return strdup(melt->name?melt->name:melt->path);
 }
 
 static void
-_libraries_genlist_refresh()
+_media_genlist_refresh()
 {
-   if (!_libraries_itc)
+   if (!_media_itc)
      {
-        _libraries_itc = elm_genlist_item_class_new();
-        _libraries_itc->item_style = "default";
-        _libraries_itc->func.text_get = _libraries_text_get;
+        _media_itc = elm_genlist_item_class_new();
+        _media_itc->item_style = "default";
+        _media_itc->func.text_get = _media_text_get;
      }
 
-   elm_genlist_clear(_libraries_gl);
+   elm_genlist_clear(_media_gl);
    Eina_List *itr;
-   Music_Library *mlib;
-   EINA_LIST_FOREACH(_cfg->libraries, itr, mlib)
+   Media_Element *melt;
+   EINA_LIST_FOREACH(_cfg->elements, itr, melt)
      {
-        Elm_Object_Item *it = elm_genlist_item_append(_libraries_gl, _libraries_itc, mlib, NULL,
-              mlib->files?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
+        Elm_Object_Item *it = elm_genlist_item_append(_media_gl, _media_itc, melt, NULL,
+              melt->static_elts || melt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
               NULL, NULL);
-        elm_genlist_item_expanded_set(it, mlib->expanded);
+        elm_genlist_item_expanded_set(it, melt->expanded);
      }
 }
 
@@ -128,15 +126,22 @@ static void
 _expand(void *data EINA_UNUSED, Evas_Object *cont EINA_UNUSED, void *event_info)
 {
    Elm_Object_Item *glit = event_info;
-   Music_Library *mlib = elm_object_item_data_get(glit);
+   Media_Element *melt = elm_object_item_data_get(glit) ,*selt;
    Eina_List *itr;
-   mlib->expanded = EINA_TRUE;
-   EINA_LIST_FOREACH(mlib->files, itr, mlib)
+   melt->expanded = EINA_TRUE;
+   EINA_LIST_FOREACH(melt->static_elts, itr, selt)
      {
-        Elm_Object_Item *it = elm_genlist_item_append(_libraries_gl, _libraries_itc, mlib, glit,
-              mlib->files?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
+        Elm_Object_Item *it = elm_genlist_item_append(_media_gl, _media_itc, selt, glit,
+              selt->static_elts || selt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
               NULL, NULL);
-        elm_genlist_item_expanded_set(it, mlib->expanded);
+        elm_genlist_item_expanded_set(it, selt->expanded);
+     }
+   EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt)
+     {
+        Elm_Object_Item *it = elm_genlist_item_append(_media_gl, _media_itc, selt, glit,
+              selt->static_elts || selt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
+              NULL, NULL);
+        elm_genlist_item_expanded_set(it, selt->expanded);
      }
 }
 
@@ -144,9 +149,9 @@ static void
 _contract(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
    Elm_Object_Item *glit = event_info;
-   Music_Library *mlib = elm_object_item_data_get(glit);
+   Media_Element *melt = elm_object_item_data_get(glit);
    elm_genlist_item_subitems_clear(glit);
-   mlib->expanded = EINA_FALSE;
+   melt->expanded = EINA_FALSE;
 }
 
 static void
@@ -164,54 +169,56 @@ _contract_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_
 }
 
 static void
-_gl_selected(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+_files_scan(Media_Element *melt)
 {
-   if (_selected_gl == data) return;
-   Elm_Object_Item *sel = elm_genlist_selected_item_get(_selected_gl);
-   elm_genlist_item_selected_set(sel, EINA_FALSE);
-   _selected_gl = data;
-}
-
-static void
-_files_scan(Music_Library *mlib)
-{
-   Eina_List *lst = ecore_file_ls(mlib->path);
+   if (melt->type != MEDIA_LIBRARY && melt->type != MEDIA_URI) return;
+   Eina_List *lst = ecore_file_ls(melt->path);
    char *name;
    EINA_LIST_FREE(lst, name)
      {
         char full_path[1024];
-        Music_Library *fpath = calloc(1, sizeof(*fpath));
-        sprintf(full_path, "%s/%s", mlib->path, name);
-        fpath->path = eina_stringshare_add(full_path);
-        fpath->name = eina_stringshare_add(name);
-        eina_hash_set(_full_paths_hash, fpath->path, fpath);
-        if (ecore_file_is_dir(full_path)) _files_scan(fpath);
-        mlib->files = eina_list_append(mlib->files, fpath);
+        Media_Element *selt = calloc(1, sizeof(*selt));
+        melt->type = MEDIA_URI;
+        sprintf(full_path, "%s/%s", melt->path, name);
+        selt->path = eina_stringshare_add(full_path);
+        selt->name = eina_stringshare_add(name);
+        eina_hash_set(_full_paths_hash, selt->path, selt);
+        if (ecore_file_is_dir(full_path)) _files_scan(selt);
+        melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
         free(name);
      }
 }
 
 static void
-_files_list_clear(Music_Library *mlib)
+_media_list_clear(Media_Element *melt)
 {
-   Music_Library *fpath;
-   EINA_LIST_FREE(mlib->files, fpath)
+   Media_Element *selt;
+   EINA_LIST_FREE(melt->static_elts, selt)
      {
-        _files_list_clear(fpath);
-        free(fpath);
+        _media_list_clear(selt);
+        free(selt);
+     }
+   EINA_LIST_FREE(melt->dynamic_elts, selt)
+     {
+        _media_list_clear(selt);
+        free(selt);
      }
 }
 
 static void
-_music_library_free(Music_Library *mlib)
+_media_element_free(Media_Element *melt)
 {
-   Music_Library *fmlib;
-   if (!mlib) return;
-   EINA_LIST_FREE(mlib->files, fmlib)
+   Media_Element *selt;
+   if (!melt) return;
+   EINA_LIST_FREE(melt->static_elts, selt)
      {
-        _music_library_free(fmlib);
+        _media_element_free(selt);
      }
-   free(mlib);
+   EINA_LIST_FREE(melt->dynamic_elts, selt)
+     {
+        _media_element_free(selt);
+     }
+   free(melt);
 }
 
 static void
@@ -247,26 +254,15 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
 {
    if (!_selected_gl) return;
    Elm_Object_Item *sel = elm_genlist_selected_item_get(_selected_gl);
-   Music_Library *mlib = NULL;
-   if (sel)
-     {
-        if (_selected_gl == _libraries_gl)
-          {
-             mlib = elm_object_item_data_get(sel);
-          }
-        if (_selected_gl == _playlist_gl)
-          {
-             Playlist_File *pf = elm_object_item_data_get(sel);
-             if (pf) mlib = pf->mlib;
-          }
-     }
+   Media_Element *melt = NULL;
+   if (sel) melt = elm_object_item_data_get(sel);
 
    /* The selected path is different of the played path */
-   if (mlib && mlib != _file_playing)
+   if (melt && melt != _file_playing)
      {
         emotion_object_play_set(_ply_emo, EINA_FALSE);
         if (_file_playing) _file_playing->playing = EINA_FALSE;
-        _file_playing = mlib;
+        _file_playing = melt;
         emotion_object_file_set(_ply_emo, _file_playing->path);
      }
 
@@ -310,14 +306,14 @@ _sl_changed(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
 static void
 _dir_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED)
 {
-   Music_Library *m = efl_key_data_get(obj, "mlib");
+   Media_Element *m = efl_key_data_get(obj, "melt");
    Eo *entry = efl_key_data_get(obj, "entry");
    Eo *fs_entry = efl_key_data_get(obj, "fs_entry");
 
    if (!m)
      {
         m = calloc(1, sizeof(*m));
-        _cfg->libraries = eina_list_append(_cfg->libraries, m);
+        _cfg->elements = eina_list_append(_cfg->elements, m);
      }
    if (m->path) eina_stringshare_del(m->path);
    m->path = eina_stringshare_add(elm_fileselector_path_get(fs_entry));
@@ -327,9 +323,9 @@ _dir_add(void *data EINA_UNUSED, Evas_Object *obj, void *event_info EINA_UNUSED)
    m->name = eina_stringshare_add(name);
    _write_to_file(_cfg_filename);
 
-   _files_list_clear(m);
+   _media_list_clear(m);
    _files_scan(m);
-   _libraries_genlist_refresh();
+   _media_genlist_refresh();
    evas_object_del(_popup);
 }
 
@@ -338,8 +334,8 @@ _dir_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UN
 {
    Eina_Bool is_add = (Eina_Bool)(intptr_t)data;
 
-   Elm_Object_Item *sel = elm_genlist_selected_item_get(_libraries_gl);
-   Music_Library *m = !is_add ? elm_object_item_data_get(sel) : NULL;
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_media_gl);
+   Media_Element *m = !is_add ? elm_object_item_data_get(sel) : NULL;
    if (!is_add && !m) return;
 
    _popup = elm_popup_add(_win);
@@ -392,7 +388,7 @@ _dir_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UN
      {
         elm_entry_entry_set(entry, m->name);
         elm_fileselector_path_set(fs_entry, m->path);
-        efl_key_data_set(add_bt, "mlib", m);
+        efl_key_data_set(add_bt, "melt", m);
      }
    evas_object_show(_popup);
 }
@@ -400,61 +396,18 @@ _dir_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UN
 static void
 _dir_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
-   Elm_Object_Item *sel = elm_genlist_selected_item_get(_libraries_gl);
+   Elm_Object_Item *sel = elm_genlist_selected_item_get(_media_gl);
    if (!sel) return;
-   Music_Library *m = elm_object_item_data_get(sel);
-   _files_list_clear(m);
-   _cfg->libraries = eina_list_remove(_cfg->libraries, m);
-   _libraries_genlist_refresh();
-   _write_to_file(_cfg_filename);
-}
-
-static char *
-_playlist_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED)
-{
-   Playlist_File *plp = data;
-   return strdup(plp->path);
-}
-
-static void
-_playlist_genlist_refresh()
-{
-   Eina_List *itr;
-   Playlist_File *plp;
-   if (!_playlist_itc)
-     {
-        _playlist_itc = elm_genlist_item_class_new();
-        _playlist_itc->item_style = "default";
-        _playlist_itc->func.text_get = _playlist_text_get;
-     }
-
-   elm_genlist_clear(_playlist_gl);
-   EINA_LIST_FOREACH(_current_playlist?_current_playlist->files:NULL, itr, plp)
-     {
-        elm_genlist_item_append(_playlist_gl, _playlist_itc, plp, NULL,
-              ELM_GENLIST_ITEM_NONE, NULL, NULL);
-     }
-}
-
-static void
-_selected_path_transfer(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_info EINA_UNUSED)
-{
-   Elm_Object_Item *sel = elm_genlist_selected_item_get(_libraries_gl);
-   if (!sel) return;
-   Music_Library *m = elm_object_item_data_get(sel);
-   if (!m) return;
-
-   Playlist_File *plp = calloc(1, sizeof(*plp));
-   plp->path = strdup(m->path);
-   _current_playlist->files = eina_list_append(_current_playlist->files, plp);
-   _playlist_genlist_refresh();
+   Media_Element *m = elm_object_item_data_get(sel);
+   _media_list_clear(m);
+   _cfg->elements = eina_list_remove(_cfg->elements, m);
+   _media_genlist_refresh();
    _write_to_file(_cfg_filename);
 }
 
 Eina_Bool
 music_start(const char *filename, Eo *win)
 {
-   Playlist *pl;
    emotion_init();
    _win = win;
    if (!_cfg) _eet_load();
@@ -471,16 +424,12 @@ music_start(const char *filename, Eo *win)
         char *home_dir = getenv("HOME");
         char dflt_path[1024];
         if (!_cfg) _cfg = calloc(1, sizeof(*_cfg));
-        Music_Library *mlib = calloc(1, sizeof(*mlib));
+        Media_Element *melt = calloc(1, sizeof(*melt));
+        melt->type = MEDIA_LIBRARY;
         sprintf(dflt_path, "%s/Music", home_dir);
-        mlib->name = eina_stringshare_add("Music");
-        mlib->path = eina_stringshare_add(dflt_path);
-        _cfg->libraries = eina_list_append(_cfg->libraries, mlib);
-        /* Default playlist */
-        pl = calloc(1, sizeof(*pl));
-        pl->name = strdup("Unnamed");
-        _cfg->playlists = eina_list_append(_cfg->playlists, pl);
-        _cfg->current_playlist = strdup(pl->name);
+        melt->name = eina_stringshare_add("Music");
+        melt->path = eina_stringshare_add(dflt_path);
+        _cfg->elements = eina_list_append(_cfg->elements, melt);
      }
    _write_to_file(_cfg_filename);
 
@@ -499,24 +448,11 @@ music_start(const char *filename, Eo *win)
 
    _full_paths_hash = eina_hash_stringshared_new(NULL);
 
-   Eina_List *itr, *itr2;
-   Music_Library *mlib;
-   EINA_LIST_FOREACH(_cfg->libraries, itr, mlib)
+   Eina_List *itr;
+   Media_Element *melt;
+   EINA_LIST_FOREACH(_cfg->elements, itr, melt)
      {
-        _files_scan(mlib);
-     }
-
-   EINA_LIST_FOREACH(_cfg->playlists, itr, pl)
-     {
-        Playlist_File *pfile;
-        EINA_LIST_FOREACH(pl->files, itr2, pfile)
-          {
-             pfile->mlib = eina_hash_find(_full_paths_hash, pfile->path);
-          }
-        if (!strcmp(pl->name, _cfg->current_playlist))
-          {
-             _current_playlist = pl;
-          }
+        _files_scan(melt);
      }
 
    return EINA_TRUE;
@@ -527,10 +463,10 @@ music_stop(void)
 {
    if (_cfg)
      {
-        Music_Library *mlib;
-        EINA_LIST_FREE(_cfg->libraries, mlib)
+        Media_Element *melt;
+        EINA_LIST_FREE(_cfg->elements, melt)
           {
-             _music_library_free(mlib);
+             _media_element_free(melt);
           }
      }
    eina_hash_free(_full_paths_hash);
@@ -549,7 +485,7 @@ music_ui_get(Eo *parent)
    evas_object_size_hint_align_set(box, EVAS_HINT_FILL, EVAS_HINT_FILL);
    evas_object_show(box);
 
-   /* Paths and playlist box */
+   /* Media and playlist box */
    Eo *list_box = elm_box_add(box);
    evas_object_size_hint_weight_set(list_box, EVAS_HINT_EXPAND, 0.9);
    evas_object_size_hint_align_set(list_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
@@ -557,19 +493,19 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(box, list_box);
    evas_object_show(list_box);
 
-   /* Paths box */
-   Eo *libraries_box = elm_box_add(list_box);
-   evas_object_size_hint_weight_set(libraries_box, 0.4, EVAS_HINT_EXPAND);
-   evas_object_size_hint_align_set(libraries_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(list_box, libraries_box);
-   evas_object_show(libraries_box);
+   /* Media box */
+   Eo *media_box = elm_box_add(list_box);
+   evas_object_size_hint_weight_set(media_box, 0.4, EVAS_HINT_EXPAND);
+   evas_object_size_hint_align_set(media_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_pack_end(list_box, media_box);
+   evas_object_show(media_box);
 
    /* Add/del/edit dirs buttons box */
-   Eo *bts_box = elm_box_add(libraries_box);
+   Eo *bts_box = elm_box_add(media_box);
    elm_box_horizontal_set(bts_box, EINA_TRUE);
    evas_object_size_hint_weight_set(bts_box, EVAS_HINT_EXPAND, 0.05);
    evas_object_size_hint_align_set(bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(libraries_box, bts_box);
+   elm_box_pack_end(media_box, bts_box);
    evas_object_show(bts_box);
 
    /* Add/del/edit dirs buttons */
@@ -579,60 +515,20 @@ music_ui_get(Eo *parent)
          button_create(bts_box, "Edit directory", NULL, NULL, _dir_add_show, (void *)EINA_FALSE));
    elm_box_pack_end(bts_box, button_create(bts_box, "Delete directory", NULL, NULL, _dir_del, NULL));
 
-   /* Paths genlist */
-   _libraries_gl = elm_genlist_add(libraries_box);
-   evas_object_size_hint_weight_set(_libraries_gl, EVAS_HINT_EXPAND, 0.95);
-   evas_object_size_hint_align_set(_libraries_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(libraries_box, _libraries_gl);
-   evas_object_show(_libraries_gl);
-   efl_wref_add(_libraries_gl, &_selected_gl);
+   /* Media genlist */
+   _media_gl = elm_genlist_add(media_box);
+   evas_object_size_hint_weight_set(_media_gl, EVAS_HINT_EXPAND, 0.95);
+   evas_object_size_hint_align_set(_media_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   elm_box_pack_end(media_box, _media_gl);
+   evas_object_show(_media_gl);
+   efl_wref_add(_media_gl, &_selected_gl);
 
-   evas_object_smart_callback_add(_libraries_gl, "expand,request", _expand_req, NULL);
-   evas_object_smart_callback_add(_libraries_gl, "contract,request", _contract_req, NULL);
-   evas_object_smart_callback_add(_libraries_gl, "expanded", _expand, NULL);
-   evas_object_smart_callback_add(_libraries_gl, "contracted", _contract, NULL);
-   evas_object_smart_callback_add(_libraries_gl, "selected", _gl_selected, _libraries_gl);
+   evas_object_smart_callback_add(_media_gl, "expand,request", _expand_req, NULL);
+   evas_object_smart_callback_add(_media_gl, "contract,request", _contract_req, NULL);
+   evas_object_smart_callback_add(_media_gl, "expanded", _expand, NULL);
+   evas_object_smart_callback_add(_media_gl, "contracted", _contract, NULL);
 
-   _libraries_genlist_refresh();
-
-   /* Transfer box */
-   Eo *transfer_box = elm_box_add(list_box);
-   evas_object_size_hint_weight_set(transfer_box, 0.05, EVAS_HINT_EXPAND);
-   evas_object_size_hint_align_set(transfer_box, EVAS_HINT_FILL, 0.5);
-   elm_box_pack_end(list_box, transfer_box);
-   evas_object_show(transfer_box);
-
-   /* Transfer to current playlist button */
-   elm_box_pack_end(transfer_box,
-         button_create(transfer_box, NULL,
-            icon_create(transfer_box, "go-next", NULL),
-            NULL, _selected_path_transfer, NULL));
-
-   /* Playlist box */
-   Eo *playlist_box = elm_box_add(list_box);
-   evas_object_size_hint_weight_set(playlist_box, 0.4, EVAS_HINT_EXPAND);
-   evas_object_size_hint_align_set(playlist_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(list_box, playlist_box);
-   evas_object_show(playlist_box);
-
-   /* Playlist buttons box - load(hoversel of saved playlists?)/up/down/del/save */
-   Eo *playlist_bts_box = elm_box_add(playlist_box);
-   elm_box_horizontal_set(playlist_bts_box, EINA_TRUE);
-   evas_object_size_hint_weight_set(playlist_bts_box, EVAS_HINT_EXPAND, 0.05);
-   evas_object_size_hint_align_set(playlist_bts_box, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(playlist_box, playlist_bts_box);
-   evas_object_show(playlist_bts_box);
-
-   /* Playlist genlist */
-   _playlist_gl = elm_genlist_add(playlist_box);
-   evas_object_size_hint_weight_set(_playlist_gl, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
-   evas_object_size_hint_align_set(_playlist_gl, EVAS_HINT_FILL, EVAS_HINT_FILL);
-   elm_box_pack_end(playlist_box, _playlist_gl);
-   evas_object_show(_playlist_gl);
-   evas_object_smart_callback_add(_playlist_gl, "selected", _gl_selected, _playlist_gl);
-   efl_wref_add(_playlist_gl, &_selected_gl);
-
-   _playlist_genlist_refresh();
+   _media_genlist_refresh();
 
    /* Player vertical box */
    Eo *ply_box = elm_box_add(box);
