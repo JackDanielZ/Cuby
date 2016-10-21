@@ -394,6 +394,18 @@ _dir_add_show(void *data, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UN
 }
 
 static void
+_media_add_menu_show(void *data, Evas_Object *obj, void *event_info EINA_UNUSED)
+{
+   Eo *mn = elm_menu_add(data);
+   int x, y;
+   evas_object_geometry_get(obj, &x, &y, NULL, NULL);
+   elm_menu_item_add(mn, NULL, NULL, "Add library", _dir_add_show, (void *)EINA_TRUE);
+   elm_menu_item_add(mn, NULL, NULL, "Add playlist", NULL, NULL);
+   elm_menu_move(mn, x, y);
+   evas_object_show(mn);
+}
+
+static void
 _dir_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
    Elm_Object_Item *sel = elm_genlist_selected_item_get(_media_gl);
@@ -512,7 +524,7 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(bts_box,
          button_create(bts_box, NULL,
             icon_create(bts_box, "list-add", NULL),
-            NULL, _dir_add_show, (void *)EINA_TRUE));
+            NULL, _media_add_menu_show, parent));
    elm_box_pack_end(bts_box,
          button_create(bts_box, NULL,
             icon_create(bts_box, "document-properties", NULL),
