@@ -32,18 +32,20 @@ typedef enum
  *    Dynamic list for library
  *    No static list
  */
-typedef struct
+typedef struct _Media_Element Media_Element;
+
+struct _Media_Element
 {
    Media_Type type;
    const char *name;
    const char *path;
    Eina_List *static_elts;
    /* Not in eet */
-   // Media_Element *link; /* Link to another element - useful for playlists files */
+   Media_Element *parent;
    Eina_List *dynamic_elts;
    Eina_Bool expanded : 1;
    Eina_Bool playing : 1;
-} Media_Element;
+};
 
 typedef struct
 {
@@ -170,21 +172,33 @@ _contract_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_
 static void
 _files_scan(Media_Element *melt)
 {
-   if (melt->type != MEDIA_LIBRARY && melt->type != MEDIA_URI) return;
-   Eina_List *lst = ecore_file_ls(melt->path);
-   char *name;
-   EINA_LIST_FREE(lst, name)
+   if (melt->type == MEDIA_LIBRARY || melt->type == MEDIA_URI)
      {
-        char full_path[1024];
-        Media_Element *selt = calloc(1, sizeof(*selt));
-        selt->type = MEDIA_URI;
-        sprintf(full_path, "%s/%s", melt->path, name);
-        selt->path = eina_stringshare_add(full_path);
-        selt->name = eina_stringshare_add(name);
-        eina_hash_set(_full_paths_hash, selt->path, selt);
-        if (ecore_file_is_dir(full_path)) _files_scan(selt);
-        melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
-        free(name);
+        Eina_List *lst = ecore_file_ls(melt->path);
+        char *name;
+        EINA_LIST_FREE(lst, name)
+          {
+             char full_path[1024];
+             Media_Element *selt = calloc(1, sizeof(*selt));
+             selt->type = MEDIA_URI;
+             selt->parent = melt;
+             sprintf(full_path, "%s/%s", melt->path, name);
+             selt->path = eina_stringshare_add(full_path);
+             selt->name = eina_stringshare_add(name);
+             eina_hash_set(_full_paths_hash, selt->path, selt);
+             if (ecore_file_is_dir(full_path)) _files_scan(selt);
+             melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
+             free(name);
+          }
+     }
+   else if (melt->type == MEDIA_PLAYLIST)
+     {
+        Eina_List *itr;
+        Media_Element *selt;
+        EINA_LIST_FOREACH(melt->static_elts, itr, selt)
+          {
+             selt->parent = melt;
+          }
      }
 }
 
@@ -434,7 +448,13 @@ _media_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_inf
    if (!sel) return;
    Media_Element *m = elm_object_item_data_get(sel);
    _media_list_clear(m);
-   _cfg->elements = eina_list_remove(_cfg->elements, m);
+   if (m->parent)
+     {
+        m->parent->static_elts = eina_list_remove(m->parent->static_elts, m);
+        m->parent->dynamic_elts = eina_list_remove(m->parent->dynamic_elts, m);
+     }
+   else
+      _cfg->elements = eina_list_remove(_cfg->elements, m);
    _media_genlist_refresh();
    _write_to_file(_cfg_filename);
 }
