@@ -63,7 +63,7 @@ static Eina_Stringshare *_cfg_filename = NULL;
 static Elm_Genlist_Item_Class *_media_itc = NULL;
 
 static Eo *_ply_emo = NULL, *_play_total_lb = NULL, *_play_prg_lb = NULL, *_play_prg_sl = NULL;
-static Eo *_play_bt = NULL;
+static Eo *_play_bt = NULL, *_play_song_lb = NULL;
 static Media_Element *_file_playing = NULL;
 
 static Eo *_selected_gl = NULL;
@@ -276,6 +276,7 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
    /* The selected path is different of the played path */
    if (melt && melt != _file_playing)
      {
+        elm_object_text_set(_play_song_lb, "");
         emotion_object_play_set(_ply_emo, EINA_FALSE);
         if (_file_playing) _file_playing->playing = EINA_FALSE;
         _file_playing = melt;
@@ -289,6 +290,7 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
 
    if (_file_playing)
      {
+        elm_object_text_set(_play_song_lb, _file_playing->name);
         _file_playing->playing = !_file_playing->playing;
         emotion_object_play_set(_ply_emo, _file_playing->playing?EINA_TRUE:EINA_FALSE);
         elm_object_part_content_set(_play_bt, "icon",
@@ -960,6 +962,14 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(ply_sl_box, _play_total_lb);
    efl_weak_ref(&_play_total_lb);
    evas_object_show(_play_total_lb);
+
+   /* Player song name */
+   _play_song_lb = elm_label_add(ply_box);
+   evas_object_size_hint_align_set(_play_song_lb, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(_play_song_lb, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   elm_box_pack_end(ply_box, _play_song_lb);
+   efl_weak_ref(&_play_song_lb);
+   evas_object_show(_play_song_lb);
 
    /* Player buttons box */
    Eo *ply_bts_box = elm_box_add(ply_box);
