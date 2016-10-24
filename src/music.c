@@ -8,6 +8,9 @@
 
 #include "common.h"
 
+#define FILESEP "file://"
+#define FILESEP_LEN sizeof(FILESEP) - 1
+
 static Eet_Data_Descriptor *_music_edd = NULL;
 
 typedef enum
@@ -530,6 +533,325 @@ music_stop(void)
    return EINA_TRUE;
 }
 
+static Elm_Object_Item *
+_gl_item_getcb(Evas_Object *obj, Evas_Coord x, Evas_Coord y, int *xposret EINA_UNUSED, int *yposret)
+{  /* This function returns pointer to item under (x,y) coords */
+   printf("<%s> <%d> obj=<%p>\n", __func__, __LINE__, obj);
+   Elm_Object_Item *gli;
+   gli = elm_genlist_at_xy_item_get(obj, x, y, yposret);
+   if (gli)
+     printf("over <%s>, gli=<%p> yposret %i\n",
+           (char *)elm_object_item_data_get(gli), gli, *yposret);
+   else
+     printf("over none, yposret %i\n", *yposret);
+   return gli;
+}
+
+static inline char *
+_strndup(const char *str, size_t len)
+{
+   size_t slen = strlen(str);
+   char *ret;
+
+   if (slen > len) slen = len;
+   ret = malloc (slen + 1);
+   if (!ret) return NULL;
+
+   if (slen > 0) memcpy(ret, str, slen);
+   ret[slen] = '\0';
+   return ret;
+}
+
+static char *
+_drag_data_extract(char **drag_data)
+{
+   char *uri = NULL;
+   if (!drag_data)
+     return uri;
+
+   char *p = *drag_data;
+   if (!p)
+     return uri;
+   char *s = strstr(p, FILESEP);
+   if (s)
+     p += FILESEP_LEN;
+   s = strchr(p, '\n');
+   uri = p;
+   if (s)
+     {
+        if (s - p > 0)
+          {
+             char *s1 = s - 1;
+             if (s1[0] == '\r')
+               s1[0] = '\0';
+             else
+               {
+                  char *s2 = s + 1;
+                  if (s2[0] == '\r')
+                    {
+                       s[0] = '\0';
+                       s++;
+                    }
+                  else
+                    s[0] = '\0';
+               }
+          }
+        else
+          s[0] = '\0';
+        s++;
+     }
+   else
+     p = NULL;
+   *drag_data = s;
+
+   return uri;
+}
+
+static Eina_Bool
+_gl_dropcb(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, Elm_Object_Item *over_it, Elm_Selection_Data *ev, int xposret EINA_UNUSED, int yposret)
+{  /* This function is called when data is dropped on the genlist */
+   printf("<%s> <%d> str=<%s>\n", __func__, __LINE__, (char *) ev->data);
+   if (!ev->data) return EINA_FALSE;
+   if (ev->len <= 0) return EINA_FALSE;
+
+   char *dd = _strndup(ev->data, ev->len);
+   if (!dd) return EINA_FALSE;
+   char *p = dd;
+
+   char *s = _drag_data_extract(&p);
+   Media_Element *over_elt = elm_object_item_data_get(over_it);
+   while (s)
+     {
+        char *name = strrchr(s, '/');
+        Media_Element *melt = calloc(1, sizeof(*melt));
+        melt->type = MEDIA_URI;
+        melt->path = strdup(s);
+        melt->name = name ? strdup(name + 1) : strdup(s);
+        if (over_elt->type == MEDIA_PLAYLIST)
+          {
+             melt->parent = over_elt;
+             over_elt->static_elts = eina_list_append(over_elt->static_elts, melt);
+             over_elt->expanded = EINA_TRUE;
+          }
+        else if (over_elt->type == MEDIA_URI)
+          {
+             Media_Element *par_elt = over_elt->parent;
+             if (par_elt && par_elt->type == MEDIA_PLAYLIST)
+               {
+                  melt->parent = par_elt;
+                  switch(yposret)
+                    {
+                     case -1:  /* Dropped on top-part of the over_it item */
+                          {
+                             par_elt->static_elts = eina_list_prepend_relative
+                                (par_elt->static_elts, melt, over_elt);
+                             break;
+                          }
+                     case  0:  /* Dropped on center of the it item      */
+                     case  1:  /* Dropped on botton-part of the it item */
+                          {
+                             par_elt->static_elts = eina_list_append_relative
+                                (par_elt->static_elts, melt, over_elt);
+                             break;
+                          }
+                     default:
+                          {
+                             free(dd);
+                             return EINA_FALSE;
+                          }
+                    }
+               }
+          }
+
+        s = _drag_data_extract(&p);
+     }
+   free(dd);
+
+   _media_genlist_refresh();
+   _write_to_file(_cfg_filename);
+
+   return EINA_TRUE;
+}
+
+static Evas_Object *
+_gl_createicon(void *data, Evas_Object *win, Evas_Coord *xoff, Evas_Coord *yoff)
+{
+   printf("<%s> <%d>\n", __func__, __LINE__);
+   Evas_Object *icon = NULL;
+   Evas_Object *o = elm_object_item_part_content_get(data, "elm.swallow.icon");
+
+   if (o)
+     {
+        int xm, ym, w = 30, h = 30;
+        const char *f;
+        const char *g;
+        elm_image_file_get(o, &f, &g);
+        evas_pointer_canvas_xy_get(evas_object_evas_get(o), &xm, &ym);
+        if (xoff) *xoff = xm - (w/2);
+        if (yoff) *yoff = ym - (h/2);
+        icon = elm_icon_add(win);
+        elm_image_file_set(icon, f, g);
+        evas_object_size_hint_align_set(icon,
+              EVAS_HINT_FILL, EVAS_HINT_FILL);
+        evas_object_size_hint_weight_set(icon,
+              EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+        if (xoff && yoff) evas_object_move(icon, *xoff, *yoff);
+        evas_object_resize(icon, w, h);
+     }
+
+   return icon;
+}
+
+static int
+_item_ptr_cmp(const void *d1, const void *d2)
+{
+   return ((const char *) d1 - (const char *) d2);
+}
+
+static Eina_List *
+_gl_icons_get(void *data)
+{  /* Start icons animation before actually drag-starts */
+   printf("<%s> <%d>\n", __func__, __LINE__);
+   int yposret = 0;
+
+   Eina_List *l;
+
+   Eina_List *icons = NULL;
+
+   Evas_Coord xm, ym;
+   evas_pointer_canvas_xy_get(evas_object_evas_get(data), &xm, &ym);
+   Eina_List *items = eina_list_clone(elm_genlist_selected_items_get(data));
+   Elm_Object_Item *gli = elm_genlist_at_xy_item_get(data,
+         xm, ym, &yposret);
+   if (gli)
+     {  /* Add the item mouse is over to the list if NOT seleced */
+        void *p = eina_list_search_unsorted(items, _item_ptr_cmp, gli);
+        if (!p)
+          items = eina_list_append(items, gli);
+     }
+
+   EINA_LIST_FOREACH(items, l, gli)
+     {
+        Media_Element *melt = elm_object_item_data_get(gli);
+        if (melt->type != MEDIA_URI) continue;
+        /* Now add icons to animation window */
+        Evas_Object *o = elm_object_item_part_content_get(gli,
+              "elm.swallow.icon");
+
+        if (o)
+          {
+             int x, y, w, h;
+             const char *f, *g;
+             elm_image_file_get(o, &f, &g);
+             Evas_Object *ic = elm_icon_add(data);
+             elm_image_file_set(ic, f, g);
+             evas_object_geometry_get(o, &x, &y, &w, &h);
+             evas_object_size_hint_align_set(ic,
+                   EVAS_HINT_FILL, EVAS_HINT_FILL);
+             evas_object_size_hint_weight_set(ic,
+                   EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+
+             evas_object_move(ic, x, y);
+             evas_object_resize(ic, w, h);
+             evas_object_show(ic);
+
+             icons =  eina_list_append(icons, ic);
+          }
+     }
+
+   eina_list_free(items);
+   return icons;
+}
+
+static const char *
+_drag_data_build(Eina_List **items)
+{
+   const char *drag_data = NULL;
+   if (*items)
+     {
+        Eina_Strbuf *str;
+        Eina_List *l;
+        Elm_Object_Item *it;
+        int i = 0;
+
+        str = eina_strbuf_new();
+        if (!str) return NULL;
+
+        /* drag data in form: file://URI1\nfile://URI2 */
+        EINA_LIST_FOREACH(*items, l, it)
+          {
+             Media_Element *melt = elm_object_item_data_get(it);
+             if (melt && melt->type == MEDIA_URI)
+               {
+                  if (i > 0) eina_strbuf_append(str, "\n");
+                  eina_strbuf_append(str, FILESEP);
+                  eina_strbuf_append(str, melt->path);
+                  i++;
+               }
+          }
+        drag_data = eina_strbuf_string_steal(str);
+        eina_strbuf_free(str);
+     }
+   return drag_data;
+}
+
+static const char *
+_gl_get_drag_data(Evas_Object *obj, Elm_Object_Item *it, Eina_List **items)
+{  /* Construct a string of dragged info, user frees returned string */
+   const char *drag_data = NULL;
+   printf("<%s> <%d>\n", __func__, __LINE__);
+
+   *items = eina_list_clone(elm_genlist_selected_items_get(obj));
+   if (it)
+     {  /* Add the item mouse is over to the list if NOT seleced */
+        void *p = eina_list_search_unsorted(*items, _item_ptr_cmp, it);
+        if (!p)
+          *items = eina_list_append(*items, it);
+     }
+   drag_data = _drag_data_build(items);
+   printf("<%s> <%d> Sending <%s>\n", __func__, __LINE__, drag_data);
+
+   return drag_data;
+}
+
+static void
+_gl_dragdone(void *data, Evas_Object *obj EINA_UNUSED, Eina_Bool doaccept)
+{
+   printf("<%s> <%d> data=<%p> doaccept=<%d>\n",
+         __func__, __LINE__, data, doaccept);
+
+   if (doaccept)
+     {  /* Remove items dragged out (accepted by target) */
+#if 0
+        EINA_LIST_FOREACH(data, l, it)
+           elm_object_item_del(it);
+#endif
+     }
+
+   eina_list_free(data);
+   return;
+}
+
+static Eina_Bool
+_gl_dnd_default_anim_data_getcb(Evas_Object *obj,  /* The genlist object */
+      Elm_Object_Item *it,
+      Elm_Drag_User_Info *info)
+{  /* This called before starting to drag, mouse-down was on it */
+   info->format = ELM_SEL_FORMAT_TARGETS;
+   info->createicon = _gl_createicon;
+   info->createdata = it;
+   info->icons = _gl_icons_get(obj);
+   info->dragdone = _gl_dragdone;
+
+   /* Now, collect data to send for drop from ALL selected items */
+   /* Save list pointer to remove items after drop and free list on done */
+   info->data = _gl_get_drag_data(obj, it, (Eina_List **) &info->donecbdata);
+   printf("%s - data = %s\n", __FUNCTION__, info->data);
+   info->acceptdata = info->donecbdata;
+
+   return !!info->data;
+}
+
 Eo *
 music_ui_get(Eo *parent)
 {
@@ -582,6 +904,11 @@ music_ui_get(Eo *parent)
    elm_box_pack_end(media_box, _media_gl);
    evas_object_show(_media_gl);
    efl_wref_add(_media_gl, &_selected_gl);
+
+   elm_drop_item_container_add(_media_gl, ELM_SEL_FORMAT_TARGETS, _gl_item_getcb, NULL, NULL,
+         NULL, NULL, NULL, NULL, _gl_dropcb, NULL);
+   elm_drag_item_container_add(_media_gl, 0.5, 0.3,
+         _gl_item_getcb, _gl_dnd_default_anim_data_getcb);
 
    evas_object_smart_callback_add(_media_gl, "expand,request", _expand_req, NULL);
    evas_object_smart_callback_add(_media_gl, "contract,request", _contract_req, NULL);
