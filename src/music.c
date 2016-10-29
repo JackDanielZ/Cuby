@@ -64,7 +64,8 @@ static Elm_Genlist_Item_Class *_media_itc = NULL;
 
 static Eo *_ply_emo = NULL, *_play_total_lb = NULL, *_play_prg_lb = NULL, *_play_prg_sl = NULL;
 static Eo *_play_bt = NULL, *_play_song_lb = NULL;
-static Media_Element *_file_playing = NULL;
+
+static Media_Element *_playing_media = NULL, *_main_playing_media = NULL;
 
 static Eo *_selected_gl = NULL;
 
@@ -257,12 +258,75 @@ _media_position_update(void *data, const Efl_Event *ev)
    if (_play_prg_sl) elm_slider_value_set(_play_prg_sl, val);
 }
 
+static Media_Element *
+_media_find_next(Media_Element *current)
+{
+   if (current->dynamic_elts) return eina_list_data_get(current->dynamic_elts);
+   if (current->static_elts) return eina_list_data_get(current->static_elts);
+   while (current)
+     {
+        Media_Element *parent, *next;
+        Eina_List *cur_list;
+        if (current == _main_playing_media) return NULL;
+        parent = current->parent;
+        if (!parent) return current; // ???
+        cur_list = eina_list_data_find_list(parent->dynamic_elts, current);
+        if (!cur_list) cur_list = eina_list_data_find_list(parent->static_elts, current);
+        if (cur_list)
+          {
+             next = eina_list_data_get(eina_list_next(cur_list));
+             if (next) return next;
+          }
+        current = parent;
+     }
+   return NULL;
+}
+
+static void
+_media_play_set(Media_Element *elt, Eina_Bool play)
+{
+   if (!elt) return;
+   elt->playing = play;
+   if (!play || elt != _playing_media)
+     {
+        /* Pause || the selected path is different of the played path */
+        if (!play)
+          {
+             elm_object_part_content_set(_play_bt, "icon",
+                   icon_create(_play_bt, "media-playback-start", NULL));
+          }
+        if (elt != _playing_media) elm_object_text_set(_play_song_lb, "");
+        if (_playing_media) _playing_media->playing = EINA_FALSE;
+        emotion_object_play_set(_ply_emo, EINA_FALSE);
+     }
+   if (play)
+     {
+        elm_object_part_content_set(_play_bt, "icon",
+              icon_create(_play_bt, "media-playback-pause", NULL));
+        if (elt == _playing_media)
+          {
+             /* Play again when finished - int conversion is needed
+              * because the returned values are not exactly the same. */
+             if ((int)emotion_object_position_get(_ply_emo) == (int)emotion_object_play_length_get(_ply_emo))
+                emotion_object_position_set(_ply_emo, 0);
+          }
+        else
+          {
+             _playing_media = elt;
+             emotion_object_file_set(_ply_emo, _playing_media->path);
+             elm_object_text_set(_play_song_lb, _playing_media->name);
+          }
+        emotion_object_play_set(_ply_emo, EINA_TRUE);
+     }
+}
+
 static void
 _media_finished(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
 {
-   _file_playing->playing = EINA_FALSE;
-   elm_object_part_content_set(_play_bt, "icon",
-         icon_create(_play_bt, "media-playback-start", NULL));
+   _media_play_set(_playing_media, EINA_FALSE);
+   Media_Element *next = _media_find_next(_playing_media);
+   if (next) _media_play_set(next, EINA_TRUE);
+   else _main_playing_media = NULL;
 }
 
 static void
@@ -273,31 +337,16 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
    Media_Element *melt = NULL;
    if (sel) melt = elm_object_item_data_get(sel);
 
-   /* The selected path is different of the played path */
-   if (melt && melt != _file_playing)
+   if (melt != _main_playing_media)
      {
-        elm_object_text_set(_play_song_lb, "");
-        emotion_object_play_set(_ply_emo, EINA_FALSE);
-        if (_file_playing) _file_playing->playing = EINA_FALSE;
-        _file_playing = melt;
-        emotion_object_file_set(_ply_emo, _file_playing->path);
+        _main_playing_media = melt;
+        while (melt->dynamic_elts != melt->static_elts) /* One is not NULL */
+          {
+             melt = _media_find_next(melt);
+          }
+        _media_play_set(melt, !melt->playing);
      }
-
-   /* Play again when finished - int conversion is needed because the returned values are not
-    * exactly the same. */
-   if ((int)emotion_object_position_get(_ply_emo) == (int)emotion_object_play_length_get(_ply_emo))
-      emotion_object_position_set(_ply_emo, 0);
-
-   if (_file_playing)
-     {
-        elm_object_text_set(_play_song_lb, _file_playing->name);
-        _file_playing->playing = !_file_playing->playing;
-        emotion_object_play_set(_ply_emo, _file_playing->playing?EINA_TRUE:EINA_FALSE);
-        elm_object_part_content_set(_play_bt, "icon",
-              icon_create(_play_bt,
-                 _file_playing->playing?"media-playback-pause":"media-playback-start",
-                 NULL));
-     }
+   else _media_play_set(_playing_media, !_playing_media->playing);
 }
 
 static char *
@@ -982,7 +1031,7 @@ music_ui_get(Eo *parent)
    /* Play/pause button */
    _play_bt = button_create(ply_bts_box, NULL,
          icon_create(ply_bts_box,
-            _file_playing && _file_playing->playing?"media-playback-pause":"media-playback-start", NULL),
+            _playing_media && _playing_media->playing?"media-playback-pause":"media-playback-start", NULL),
          NULL, _media_play_pause_cb, NULL);
    elm_box_pack_end(ply_bts_box, _play_bt);
    efl_weak_ref(&_play_bt);
