@@ -381,10 +381,11 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
           }
         else
           {
-             const char *dir = "/tmp/toto";
+             Eina_Tmpstr *dir;
+             eina_file_mkdtemp("JANGO_XXXXXX", &dir);
              ecore_file_mkdir(dir);
              melt->jango = jango_session_new("Queen", dir);
-             melt->path = dir;
+             melt->path = eina_stringshare_add(dir);
              melt->monitor = ecore_file_monitor_add(dir, _dir_update, melt);
              elm_object_text_set(_play_song_lb, "Loading...");
              _main_playing_media = melt;
