@@ -2,7 +2,7 @@ set(CMAKE_BUILD_TYPE Debug)
 
 #set(PACKAGE_DATA_DIR_DEFINITION PACKAGE_DATA_DIR="${CMAKE_BINARY_DIR}/data/")
 
-LIST(APPEND SOURCES cuby.c common.c memos.c music.c)
+LIST(APPEND SOURCES cuby.c common.c memos.c music.c jango.c)
 
 link_directories (${PC_LIBELEMENTARY_LIBRARY_DIRS})
 
@@ -26,6 +26,7 @@ target_link_libraries(cuby
    ${EET_LIBRARIES}
    ${EO_LIBRARIES}
    ${ECORE_LIBRARIES}
+   ${ECORE_CON_LIBRARIES}
    ${EVAS_LIBRARIES}
    ${EMOTION_LIBRARIES}
    ecore_file
