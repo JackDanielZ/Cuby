@@ -59,7 +59,6 @@ typedef struct
 } Music_Cfg;
 
 static Music_Cfg *_cfg = NULL;
-static Eina_Hash *_full_paths_hash = NULL;
 
 static Eo *_win = NULL, *_media_gl = NULL, *_popup = NULL;
 static Eina_Stringshare *_cfg_filename = NULL;
@@ -192,7 +191,6 @@ _files_scan(Media_Element *melt)
              sprintf(full_path, "%s/%s", melt->path, name);
              selt->path = eina_stringshare_add(full_path);
              selt->name = eina_stringshare_add(name);
-             eina_hash_set(_full_paths_hash, selt->path, selt);
              if (ecore_file_is_dir(full_path)) _files_scan(selt);
              melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
              free(name);
@@ -384,7 +382,7 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
              Eina_Tmpstr *dir;
              eina_file_mkdtemp("JANGO_XXXXXX", &dir);
              ecore_file_mkdir(dir);
-             melt->jango = jango_session_new("Queen", dir);
+             melt->jango = jango_session_new(melt->name, dir);
              melt->path = eina_stringshare_add(dir);
              melt->monitor = ecore_file_monitor_add(dir, _dir_update, melt);
              elm_object_text_set(_play_song_lb, "Loading...");
@@ -605,8 +603,6 @@ music_start(const char *filename, Eo *win)
            (_ply_emo, EFL_CANVAS_VIDEO_EVENT_PLAYBACK_STOP, _media_finished, NULL);
      }
 
-   _full_paths_hash = eina_hash_stringshared_new(NULL);
-
    Eina_List *itr;
    Media_Element *melt;
    EINA_LIST_FOREACH(_cfg->elements, itr, melt)
@@ -628,8 +624,6 @@ music_stop(void)
              _media_element_free(melt);
           }
      }
-   eina_hash_free(_full_paths_hash);
-   _full_paths_hash = NULL;
    efl_del(_ply_emo);
    emotion_shutdown();
    return EINA_TRUE;
