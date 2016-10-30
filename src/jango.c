@@ -127,11 +127,14 @@ _song_data_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info
 
    if (url_complete->status)
      {
-        FILE *fp = fopen("toto.m4a", "w");
+        char name[1024];
+        const char *url = ecore_con_url_url_get(ec_url);
+        char *fname = strrchr(url, '/') + 1;
+        sprintf(name, "%s/%.4d_%s", s->download_dir, ++s->last_song_id, fname);
+        FILE *fp = fopen(name, "w");
         fwrite(s->data_buf, s->data_len, 1, fp);
         fclose(fp);
         printf("Done\n");
-        exit(0);
      }
    return EINA_FALSE;
 }
@@ -157,11 +160,12 @@ jango_shutdown()
 }
 
 Jango_Session *
-jango_session_new(const char *keyword)
+jango_session_new(const char *keyword, const char *download_dir)
 {
    char url[1024];
    Jango_Session *s = calloc(1, sizeof(*s));
-   s->key = keyword;
+   s->keyword = eina_stringshare_add(keyword);
+   s->download_dir = eina_stringshare_add(download_dir);
 
    sprintf(url, "%s/music/%s", _base_url, keyword);
    s->con_url = ecore_con_url_new(url);

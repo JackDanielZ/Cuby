@@ -11,7 +11,8 @@
 
 typedef struct
 {
-   const char *key;
+   const char *keyword;
+   const char *download_dir;
    Ecore_Con_Url *con_url;
    char *data_buf;
    char *session_id;
@@ -19,6 +20,7 @@ typedef struct
    char *cookie;
    int data_len;
    int data_buf_len;
+   int last_song_id;
 } Jango_Session;
 
 char* file_get_as_string(const char *filename);
@@ -35,7 +37,7 @@ Eo *button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_
 
 Eina_Bool jango_init(void);
 void jango_shutdown(void);
-Jango_Session *jango_session_new(const char *keyword);
+Jango_Session *jango_session_new(const char *keyword, const char *download_dir);
 
 #endif
 

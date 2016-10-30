@@ -17,7 +17,8 @@ typedef enum
 {
    MEDIA_LIBRARY = 1,
    MEDIA_PLAYLIST = 2,
-   MEDIA_URI = 3
+   MEDIA_URI = 3,
+   MEDIA_JANGO = 4
 } Media_Type;
 
 /*
@@ -44,8 +45,10 @@ struct _Media_Element
    const char *path;
    Eina_List *static_elts;
    /* Not in eet */
+   Ecore_File_Monitor *monitor;
    Media_Element *parent;
    Eina_List *dynamic_elts;
+   Jango_Session *jango;
    Eina_Bool expanded : 1;
    Eina_Bool playing : 1;
 };
@@ -330,6 +333,34 @@ _media_finished(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
 }
 
 static void
+_dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event event EINA_UNUSED, const char *path EINA_UNUSED)
+{
+   Media_Element *melt = data;
+   if (melt->type == MEDIA_JANGO)
+     {
+        Eina_List *lst = ecore_file_ls(melt->jango->download_dir);
+        char *name;
+        EINA_LIST_FREE(lst, name)
+          {
+             char full_path[1024];
+             Media_Element *selt = calloc(1, sizeof(*selt));
+             selt->type = MEDIA_URI;
+             selt->parent = melt;
+             sprintf(full_path, "%s/%s", melt->path, name);
+             selt->path = eina_stringshare_add(full_path);
+             selt->name = eina_stringshare_add(name);
+             melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
+             free(name);
+          }
+        if (melt == _main_playing_media && !_playing_media)
+          {
+             melt = _media_find_next(melt);
+             _media_play_set(melt, !melt->playing);
+          }
+     }
+}
+
+static void
 _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
    if (!_selected_gl) return;
@@ -339,12 +370,26 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
 
    if (melt != _main_playing_media)
      {
-        _main_playing_media = melt;
-        while (melt->dynamic_elts != melt->static_elts) /* One is not NULL */
+        if (melt->type != MEDIA_JANGO)
           {
-             melt = _media_find_next(melt);
+             _main_playing_media = melt;
+             while (melt->dynamic_elts != melt->static_elts) /* One is not NULL */
+               {
+                  melt = _media_find_next(melt);
+               }
+             _media_play_set(melt, !melt->playing);
           }
-        _media_play_set(melt, !melt->playing);
+        else
+          {
+             const char *dir = "/tmp/toto";
+             ecore_file_mkdir(dir);
+             melt->jango = jango_session_new("Queen", dir);
+             melt->path = dir;
+             melt->monitor = ecore_file_monitor_add(dir, _dir_update, melt);
+             elm_object_text_set(_play_song_lb, "Loading...");
+             _main_playing_media = melt;
+             _playing_media = NULL;
+          }
      }
    else _media_play_set(_playing_media, !_playing_media->playing);
 }
@@ -412,7 +457,9 @@ _media_new_or_modify_show(Media_Element *melt, Media_Type mtype, Eina_Bool is_ad
    _popup = elm_popup_add(_win);
    sprintf(title, "%s %s", is_add ? "Add" : "Edit",
          mtype == MEDIA_LIBRARY ? "library" :
-         mtype == MEDIA_PLAYLIST ? "Playlist" : "unknown");
+         mtype == MEDIA_PLAYLIST ? "Playlist" :
+         mtype == MEDIA_JANGO ? "Jango" :
+         "unknown");
    elm_object_text_set(_popup, title);
    efl_weak_ref(&_popup);
 
@@ -491,6 +538,7 @@ _media_add_menu_show(void *data, Evas_Object *obj, void *event_info EINA_UNUSED)
    evas_object_geometry_get(obj, &x, &y, NULL, NULL);
    elm_menu_item_add(mn, NULL, NULL, "Add library", _media_add_show, (void *)MEDIA_LIBRARY);
    elm_menu_item_add(mn, NULL, NULL, "Add playlist", _media_add_show, (void *)MEDIA_PLAYLIST);
+   elm_menu_item_add(mn, NULL, NULL, "Add Jango link", _media_add_show, (void *)MEDIA_JANGO);
    elm_menu_move(mn, x, y);
    evas_object_show(mn);
 }
@@ -517,6 +565,8 @@ Eina_Bool
 music_start(const char *filename, Eo *win)
 {
    emotion_init();
+   jango_init();
+
    _win = win;
    if (!_cfg) _eet_load();
    _cfg_filename = eina_stringshare_add(filename);
