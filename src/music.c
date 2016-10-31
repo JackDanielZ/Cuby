@@ -176,38 +176,6 @@ _contract_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_
 }
 
 static void
-_files_scan(Media_Element *melt)
-{
-   if (melt->type == MEDIA_LIBRARY || melt->type == MEDIA_URI)
-     {
-        Eina_List *lst = ecore_file_ls(melt->path);
-        char *name;
-        EINA_LIST_FREE(lst, name)
-          {
-             char full_path[1024];
-             Media_Element *selt = calloc(1, sizeof(*selt));
-             selt->type = MEDIA_URI;
-             selt->parent = melt;
-             sprintf(full_path, "%s/%s", melt->path, name);
-             selt->path = eina_stringshare_add(full_path);
-             selt->name = eina_stringshare_add(name);
-             if (ecore_file_is_dir(full_path)) _files_scan(selt);
-             melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
-             free(name);
-          }
-     }
-   else if (melt->type == MEDIA_PLAYLIST)
-     {
-        Eina_List *itr;
-        Media_Element *selt;
-        EINA_LIST_FOREACH(melt->static_elts, itr, selt)
-          {
-             selt->parent = melt;
-          }
-     }
-}
-
-static void
 _media_list_clear(Media_Element *melt)
 {
    Media_Element *selt;
@@ -331,31 +299,149 @@ _media_finished(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
 }
 
 static void
+_media_element_del(Media_Element *melt)
+{
+   Eina_List *itr;
+   Media_Element *selt;
+   EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt) _media_element_del(selt);
+   EINA_LIST_FOREACH(melt->static_elts, itr, selt) _media_element_del(selt);
+
+   eina_stringshare_del(melt->name);
+   eina_stringshare_del(melt->path);
+   ecore_file_monitor_del(melt->monitor);
+   if (melt->parent)
+     {
+        melt->parent->dynamic_elts = eina_list_remove(melt->parent->dynamic_elts, melt);
+        melt->parent->static_elts = eina_list_remove(melt->parent->static_elts, melt);
+     }
+   // jango_session_del(melt->jango);
+   free(melt);
+}
+
+static void
+_media_tree_sanitize(Media_Element *melt)
+{
+   Eina_List *itr, *itr2;
+   Media_Element *selt;
+   EINA_LIST_FOREACH_SAFE(melt->dynamic_elts, itr, itr2, selt)
+     {
+        if (!ecore_file_exists(selt->path)) _media_element_del(selt);
+        else if (ecore_file_is_dir(selt->path)) _media_tree_sanitize(selt);
+     }
+   EINA_LIST_FOREACH_SAFE(melt->static_elts, itr, itr2, selt)
+     {
+        if (!ecore_file_exists(selt->path)) _media_element_del(selt);
+        else if (ecore_file_is_dir(selt->path)) _media_tree_sanitize(selt);
+     }
+}
+
+static Media_Element *
+_find_media_element_by_name(Media_Element *parent, const char *name)
+{
+   Eina_List *itr;
+   Media_Element *melt;
+   name = eina_stringshare_add(name);
+   EINA_LIST_FOREACH(parent->dynamic_elts, itr, melt)
+     {
+        if (name == melt->name) goto end;
+     }
+   EINA_LIST_FOREACH(parent->static_elts, itr, melt)
+     {
+        if (name == melt->name) goto end;
+     }
+   melt = NULL;
+end:
+   eina_stringshare_del(name);
+   return melt;
+}
+
+static void
 _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event event EINA_UNUSED, const char *path EINA_UNUSED)
 {
    Media_Element *melt = data;
-   if (melt->type == MEDIA_JANGO)
+   if (!melt) return;
+   switch (melt->type)
      {
-        Eina_List *lst = ecore_file_ls(melt->jango->download_dir);
-        char *name;
-        EINA_LIST_FREE(lst, name)
-          {
-             char full_path[1024];
-             Media_Element *selt = calloc(1, sizeof(*selt));
-             selt->type = MEDIA_URI;
-             selt->parent = melt;
-             sprintf(full_path, "%s/%s", melt->path, name);
-             selt->path = eina_stringshare_add(full_path);
-             selt->name = eina_stringshare_add(name);
-             melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
-             free(name);
-          }
-        if (melt == _main_playing_media && !_playing_media)
-          {
-             melt = _media_find_next(melt);
-             _media_play_set(melt, !melt->playing);
-          }
+      case MEDIA_LIBRARY: case MEDIA_URI:
+           {
+              Eina_List *files_lst = ecore_file_ls(melt->path), *children_itr = melt->dynamic_elts;
+              char *name;
+              EINA_LIST_FREE(files_lst, name)
+                {
+                   Media_Element *selt = _find_media_element_by_name(melt, name);
+                   if (selt)
+                     {
+                        if (selt != eina_list_data_get(children_itr))
+                          {
+                             /* Move the element in case it is not at the right place */
+                             melt->dynamic_elts = eina_list_remove(melt->dynamic_elts, selt);
+                             melt->dynamic_elts = eina_list_prepend_relative_list(melt->dynamic_elts, selt, children_itr);
+                          }
+                        else
+                          {
+                             children_itr = eina_list_next(children_itr);
+                          }
+                     }
+                   else
+                     {
+                        char full_path[1024];
+                        selt = calloc(1, sizeof(*selt));
+                        selt->type = MEDIA_URI;
+                        selt->parent = melt;
+                        sprintf(full_path, "%s/%s", melt->path, name);
+                        selt->path = eina_stringshare_add(full_path);
+                        selt->name = eina_stringshare_add(name);
+                        if (children_itr)
+                           melt->dynamic_elts = eina_list_prepend_relative_list(melt->dynamic_elts, selt, children_itr);
+                        else
+                           melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
+                        children_itr = eina_list_next(children_itr);
+                     }
+                   if (ecore_file_is_dir(selt->path))
+                     {
+                        selt->monitor = ecore_file_monitor_add(selt->path, _dir_update, selt);
+                        _dir_update(selt, NULL, ECORE_FILE_EVENT_NONE, NULL);
+                     }
+                   free(name);
+                }
+              break;
+           }
+      case MEDIA_JANGO:
+           {
+              if (!melt->jango || !melt->jango->download_dir) break;
+              Eina_List *lst = ecore_file_ls(melt->jango->download_dir);
+              char *name;
+              EINA_LIST_FREE(lst, name)
+                {
+                   char full_path[1024];
+                   Media_Element *selt = calloc(1, sizeof(*selt));
+                   selt->type = MEDIA_URI;
+                   selt->parent = melt;
+                   sprintf(full_path, "%s/%s", melt->path, name);
+                   selt->path = eina_stringshare_add(full_path);
+                   selt->name = eina_stringshare_add(name);
+                   melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
+                   free(name);
+                }
+              if (melt == _main_playing_media && !_playing_media)
+                {
+                   melt = _media_find_next(melt);
+                   _media_play_set(melt, !melt->playing);
+                }
+              break;
+           }
+      case MEDIA_PLAYLIST:
+           {
+              Eina_List *itr;
+              Media_Element *selt;
+              EINA_LIST_FOREACH(melt->static_elts, itr, selt)
+                {
+                   selt->parent = melt;
+                }
+           }
+      default: break;
      }
+   _media_tree_sanitize(melt);
 }
 
 static void
@@ -437,7 +523,7 @@ _media_add(void *data, Evas_Object *obj, void *event_info EINA_UNUSED)
    _write_to_file(_cfg_filename);
 
    _media_list_clear(m);
-   if (type == MEDIA_LIBRARY) _files_scan(m);
+   if (type == MEDIA_LIBRARY) _dir_update(m, NULL, ECORE_FILE_EVENT_NONE, NULL);
    _media_genlist_refresh();
    evas_object_del(_popup);
 }
@@ -607,7 +693,8 @@ music_start(const char *filename, Eo *win)
    Media_Element *melt;
    EINA_LIST_FOREACH(_cfg->elements, itr, melt)
      {
-        _files_scan(melt);
+        melt->monitor = ecore_file_monitor_add(melt->path, _dir_update, melt);
+        _dir_update(melt, NULL, ECORE_FILE_EVENT_NONE, NULL);
      }
 
    return EINA_TRUE;
