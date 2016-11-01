@@ -67,6 +67,7 @@ static Elm_Genlist_Item_Class *_media_itc = NULL;
 
 static Eo *_ply_emo = NULL, *_play_total_lb = NULL, *_play_prg_lb = NULL, *_play_prg_sl = NULL;
 static Eo *_play_bt = NULL, *_play_song_lb = NULL;
+static Eo *_next_bt = NULL;
 
 static Media_Element *_playing_media = NULL, *_main_playing_media = NULL;
 
@@ -287,10 +288,13 @@ _media_position_update(void *data, const Efl_Event *ev)
 }
 
 static Media_Element *
-_media_find_next(Media_Element *current)
+_media_find_next(Media_Element *current, Eina_Bool check_current)
 {
-   if (current->dynamic_elts) return eina_list_data_get(current->dynamic_elts);
-   if (current->static_elts) return eina_list_data_get(current->static_elts);
+   if (check_current && (current->dynamic_elts == current->static_elts)) return current;
+   if (current->static_elts)
+      return _media_find_next(eina_list_data_get(current->static_elts), EINA_TRUE);
+   if (current->dynamic_elts)
+      return _media_find_next(eina_list_data_get(current->dynamic_elts), EINA_TRUE);
    while (current)
      {
         Media_Element *parent, *next;
@@ -298,12 +302,12 @@ _media_find_next(Media_Element *current)
         if (current == _main_playing_media) return NULL;
         parent = current->parent;
         if (!parent) return current; // ???
-        cur_list = eina_list_data_find_list(parent->dynamic_elts, current);
-        if (!cur_list) cur_list = eina_list_data_find_list(parent->static_elts, current);
+        cur_list = eina_list_data_find_list(parent->static_elts, current);
+        if (!cur_list) cur_list = eina_list_data_find_list(parent->dynamic_elts, current);
         if (cur_list)
           {
              next = eina_list_data_get(eina_list_next(cur_list));
-             if (next) return next;
+             if (next) return _media_find_next(next, EINA_TRUE);
           }
         current = parent;
      }
@@ -352,7 +356,7 @@ static void
 _media_finished(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
 {
    _media_play_set(_playing_media, EINA_FALSE);
-   Media_Element *next = _media_find_next(_playing_media);
+   Media_Element *next = _media_find_next(_playing_media, EINA_FALSE);
    if (next) _media_play_set(next, EINA_TRUE);
    else _main_playing_media = NULL;
 }
@@ -512,6 +516,17 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
           }
      }
    else if (_playing_media) _media_play_set(_playing_media, !_playing_media->playing);
+}
+
+static void
+_media_next_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_info EINA_UNUSED)
+{
+   if (!_playing_media) return;
+   _media_play_set(_playing_media, EINA_FALSE);
+   Media_Element *next = _media_find_next(_playing_media, EINA_FALSE);
+   if (!next) next = _media_find_next(_main_playing_media, EINA_TRUE);
+   if (next) _media_play_set(next, EINA_TRUE);
+   else _main_playing_media = NULL;
 }
 
 static char *
@@ -1203,6 +1218,14 @@ music_ui_get(Eo *parent)
          NULL, _media_play_pause_cb, NULL);
    elm_box_pack_end(ply_bts_box, _play_bt);
    efl_weak_ref(&_play_bt);
+
+   /* Next button */
+   _next_bt = button_create(ply_bts_box, NULL,
+         icon_create(ply_bts_box,
+            "media-seek-forward", NULL),
+         NULL, _media_next_cb, NULL);
+   elm_box_pack_end(ply_bts_box, _next_bt);
+   efl_weak_ref(&_next_bt);
 
    return box;
 }
