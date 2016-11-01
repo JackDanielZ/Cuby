@@ -165,6 +165,7 @@ _media_glitem_create(Media_Element *melt)
               melt->static_elts || melt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
               NULL, NULL);
      }
+   efl_weak_ref(&(melt->gl_item));
    elm_genlist_item_expanded_set(melt->gl_item, melt->expanded);
 }
 
