@@ -176,12 +176,17 @@ _media_glitem_refresh(Media_Element *melt)
    Media_Element *selt;
    if (!melt) return;
    if (!_media_gl) return;
-   if (!melt->gl_item) return _media_glitem_create(melt);
+   if (!melt->gl_item)
+     {
+        _media_glitem_create(melt);
+        return;
+     }
    Elm_Genlist_Item_Type expected_type = melt->static_elts || melt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE;
    if (elm_genlist_item_type_get(melt->gl_item) != expected_type)
      {
         elm_object_item_del(melt->gl_item);
-        return _media_glitem_create(melt);
+        _media_glitem_create(melt);
+        return;
      }
    EINA_LIST_FOREACH(melt->static_elts, itr, selt)
      {
@@ -430,24 +435,35 @@ _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event eve
       case MEDIA_JANGO:
            {
               if (!melt->jango || !melt->jango->download_dir) break;
-              Eina_List *lst = ecore_file_ls(melt->jango->download_dir);
+              Eina_List *files_lst = ecore_file_ls(melt->jango->download_dir);
+              Eina_List *old_media_list = melt->dynamic_elts;
+              Media_Element *selt;
               char *name;
-              EINA_LIST_FREE(lst, name)
+              melt->dynamic_elts = NULL;
+              EINA_LIST_FREE(files_lst, name)
                 {
-                   char full_path[1024];
-                   Media_Element *selt = calloc(1, sizeof(*selt));
-                   selt->type = MEDIA_URI;
-                   selt->parent = melt;
-                   sprintf(full_path, "%s/%s", melt->path, name);
-                   selt->path = eina_stringshare_add(full_path);
-                   selt->name = eina_stringshare_add(name);
+                   selt = _find_media_element_by_name(old_media_list, name);
+                   if (selt)
+                     {
+                        old_media_list = eina_list_remove(old_media_list, selt);
+                     }
+                   else
+                     {
+                        char full_path[1024];
+                        selt = calloc(1, sizeof(*selt));
+                        selt->type = MEDIA_URI;
+                        selt->parent = melt;
+                        sprintf(full_path, "%s/%s", melt->path, name);
+                        selt->path = eina_stringshare_add(full_path);
+                        selt->name = eina_stringshare_add(name);
+                     }
                    melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
                    free(name);
                 }
+              EINA_LIST_FREE(old_media_list, selt) _media_element_del(selt);
               if (melt == _main_playing_media && !_playing_media)
                 {
-                   melt = _media_find_next(melt);
-                   _media_play_set(melt, !melt->playing);
+                   _media_play_set(_media_find_next(melt, EINA_FALSE), EINA_TRUE);
                 }
               break;
            }
@@ -479,10 +495,7 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
         if (melt->type != MEDIA_JANGO)
           {
              _main_playing_media = melt;
-             while (melt->dynamic_elts != melt->static_elts) /* One is not NULL */
-               {
-                  melt = _media_find_next(melt);
-               }
+             melt = _media_find_next(melt, EINA_TRUE);
              _media_play_set(melt, !melt->playing);
           }
         else
@@ -498,7 +511,7 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
              _playing_media = NULL;
           }
      }
-   else _media_play_set(_playing_media, !_playing_media->playing);
+   else if (_playing_media) _media_play_set(_playing_media, !_playing_media->playing);
 }
 
 static char *
