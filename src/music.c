@@ -49,6 +49,7 @@ struct _Media_Element
    Media_Element *parent;
    Eina_List *dynamic_elts;
    Jango_Session *jango;
+   Elm_Genlist_Item *gl_item;
    Eina_Bool expanded : 1;
    Eina_Bool playing : 1;
 };
@@ -108,24 +109,98 @@ _media_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_
 }
 
 static void
-_media_genlist_refresh()
+_media_element_del(Media_Element *melt)
 {
+   Eina_List *itr;
+   Media_Element *selt;
+   EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt) _media_element_del(selt);
+   EINA_LIST_FOREACH(melt->static_elts, itr, selt) _media_element_del(selt);
+
+   eina_stringshare_del(melt->name);
+   eina_stringshare_del(melt->path);
+   ecore_file_monitor_del(melt->monitor);
+   elm_object_item_del(melt->gl_item);
+   if (melt->parent)
+     {
+        melt->parent->dynamic_elts = eina_list_remove(melt->parent->dynamic_elts, melt);
+        melt->parent->static_elts = eina_list_remove(melt->parent->static_elts, melt);
+     }
+   // jango_session_del(melt->jango);
+   free(melt);
+}
+
+static void
+_media_glitem_create(Media_Element *melt)
+{
+   if (!melt || melt->gl_item) return;
+   Media_Element *parent = melt->parent;
+   Eina_List *found_itr = NULL;
+
    if (!_media_itc)
      {
         _media_itc = elm_genlist_item_class_new();
         _media_itc->item_style = "default";
         _media_itc->func.text_get = _media_text_get;
      }
-
-   elm_genlist_clear(_media_gl);
-   Eina_List *itr;
-   Media_Element *melt;
-   EINA_LIST_FOREACH(_cfg->elements, itr, melt)
+   if (parent)
      {
-        Elm_Object_Item *it = elm_genlist_item_append(_media_gl, _media_itc, melt, NULL,
+        found_itr = eina_list_data_find_list(parent->static_elts, melt);
+        if (!found_itr) found_itr = eina_list_data_find_list(parent->dynamic_elts, melt);
+     }
+   else
+     {
+        found_itr = eina_list_data_find_list(_cfg->elements, melt);
+     }
+   Media_Element *prev_elt = eina_list_data_get(eina_list_prev(found_itr));
+   if (prev_elt)
+     {
+        melt->gl_item = elm_genlist_item_insert_after(_media_gl, _media_itc, melt, parent ? parent->gl_item : NULL,
+              prev_elt->gl_item,
               melt->static_elts || melt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
               NULL, NULL);
-        elm_genlist_item_expanded_set(it, melt->expanded);
+     }
+   else
+     {
+        melt->gl_item = elm_genlist_item_prepend(_media_gl, _media_itc, melt, parent ? parent->gl_item : NULL,
+              melt->static_elts || melt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
+              NULL, NULL);
+     }
+   elm_genlist_item_expanded_set(melt->gl_item, melt->expanded);
+}
+
+static void
+_media_glitem_refresh(Media_Element *melt)
+{
+   Eina_List *itr;
+   Media_Element *selt;
+   if (!melt) return;
+   if (!_media_gl) return;
+   if (!melt->gl_item) return _media_glitem_create(melt);
+   Elm_Genlist_Item_Type expected_type = melt->static_elts || melt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE;
+   if (elm_genlist_item_type_get(melt->gl_item) != expected_type)
+     {
+        elm_object_item_del(melt->gl_item);
+        return _media_glitem_create(melt);
+     }
+   EINA_LIST_FOREACH(melt->static_elts, itr, selt)
+     {
+        _media_glitem_refresh(selt);
+     }
+   EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt)
+     {
+        _media_glitem_refresh(selt);
+     }
+}
+
+static void
+_media_genlist_refresh()
+{
+   Eina_List *itr;
+   Media_Element *melt;
+   if (!_media_gl) return;
+   EINA_LIST_FOREACH(_cfg->elements, itr, melt)
+     {
+        _media_glitem_refresh(melt);
      }
 }
 
@@ -138,17 +213,11 @@ _expand(void *data EINA_UNUSED, Evas_Object *cont EINA_UNUSED, void *event_info)
    melt->expanded = EINA_TRUE;
    EINA_LIST_FOREACH(melt->static_elts, itr, selt)
      {
-        Elm_Object_Item *it = elm_genlist_item_append(_media_gl, _media_itc, selt, glit,
-              selt->static_elts || selt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
-              NULL, NULL);
-        elm_genlist_item_expanded_set(it, selt->expanded);
+        _media_glitem_create(selt);
      }
    EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt)
      {
-        Elm_Object_Item *it = elm_genlist_item_append(_media_gl, _media_itc, selt, glit,
-              selt->static_elts || selt->dynamic_elts?ELM_GENLIST_ITEM_TREE:ELM_GENLIST_ITEM_NONE,
-              NULL, NULL);
-        elm_genlist_item_expanded_set(it, selt->expanded);
+        _media_glitem_create(selt);
      }
 }
 
@@ -189,22 +258,6 @@ _media_list_clear(Media_Element *melt)
         _media_list_clear(selt);
         free(selt);
      }
-}
-
-static void
-_media_element_free(Media_Element *melt)
-{
-   Media_Element *selt;
-   if (!melt) return;
-   EINA_LIST_FREE(melt->static_elts, selt)
-     {
-        _media_element_free(selt);
-     }
-   EINA_LIST_FREE(melt->dynamic_elts, selt)
-     {
-        _media_element_free(selt);
-     }
-   free(melt);
 }
 
 static void
@@ -299,26 +352,6 @@ _media_finished(void *data EINA_UNUSED, const Efl_Event *ev EINA_UNUSED)
 }
 
 static void
-_media_element_del(Media_Element *melt)
-{
-   Eina_List *itr;
-   Media_Element *selt;
-   EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt) _media_element_del(selt);
-   EINA_LIST_FOREACH(melt->static_elts, itr, selt) _media_element_del(selt);
-
-   eina_stringshare_del(melt->name);
-   eina_stringshare_del(melt->path);
-   ecore_file_monitor_del(melt->monitor);
-   if (melt->parent)
-     {
-        melt->parent->dynamic_elts = eina_list_remove(melt->parent->dynamic_elts, melt);
-        melt->parent->static_elts = eina_list_remove(melt->parent->static_elts, melt);
-     }
-   // jango_session_del(melt->jango);
-   free(melt);
-}
-
-static void
 _media_tree_sanitize(Media_Element *melt)
 {
    Eina_List *itr, *itr2;
@@ -336,16 +369,12 @@ _media_tree_sanitize(Media_Element *melt)
 }
 
 static Media_Element *
-_find_media_element_by_name(Media_Element *parent, const char *name)
+_find_media_element_by_name(Eina_List *lst, const char *name)
 {
    Eina_List *itr;
    Media_Element *melt;
    name = eina_stringshare_add(name);
-   EINA_LIST_FOREACH(parent->dynamic_elts, itr, melt)
-     {
-        if (name == melt->name) goto end;
-     }
-   EINA_LIST_FOREACH(parent->static_elts, itr, melt)
+   EINA_LIST_FOREACH(lst, itr, melt)
      {
         if (name == melt->name) goto end;
      }
@@ -364,23 +393,17 @@ _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event eve
      {
       case MEDIA_LIBRARY: case MEDIA_URI:
            {
-              Eina_List *files_lst = ecore_file_ls(melt->path), *children_itr = melt->dynamic_elts;
+              Eina_List *files_lst = ecore_file_ls(melt->path);
+              Eina_List *old_media_list = melt->dynamic_elts;
+              Media_Element *selt;
               char *name;
+              melt->dynamic_elts = NULL;
               EINA_LIST_FREE(files_lst, name)
                 {
-                   Media_Element *selt = _find_media_element_by_name(melt, name);
+                   selt = _find_media_element_by_name(old_media_list, name);
                    if (selt)
                      {
-                        if (selt != eina_list_data_get(children_itr))
-                          {
-                             /* Move the element in case it is not at the right place */
-                             melt->dynamic_elts = eina_list_remove(melt->dynamic_elts, selt);
-                             melt->dynamic_elts = eina_list_prepend_relative_list(melt->dynamic_elts, selt, children_itr);
-                          }
-                        else
-                          {
-                             children_itr = eina_list_next(children_itr);
-                          }
+                        old_media_list = eina_list_remove(old_media_list, selt);
                      }
                    else
                      {
@@ -391,19 +414,16 @@ _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event eve
                         sprintf(full_path, "%s/%s", melt->path, name);
                         selt->path = eina_stringshare_add(full_path);
                         selt->name = eina_stringshare_add(name);
-                        if (children_itr)
-                           melt->dynamic_elts = eina_list_prepend_relative_list(melt->dynamic_elts, selt, children_itr);
-                        else
-                           melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
-                        children_itr = eina_list_next(children_itr);
                      }
+                   melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
                    if (ecore_file_is_dir(selt->path))
                      {
-                        selt->monitor = ecore_file_monitor_add(selt->path, _dir_update, selt);
+                        if (!selt->monitor) selt->monitor = ecore_file_monitor_add(selt->path, _dir_update, selt);
                         _dir_update(selt, NULL, ECORE_FILE_EVENT_NONE, NULL);
                      }
                    free(name);
                 }
+              EINA_LIST_FREE(old_media_list, selt) _media_element_del(selt);
               break;
            }
       case MEDIA_JANGO:
@@ -442,6 +462,7 @@ _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event eve
       default: break;
      }
    _media_tree_sanitize(melt);
+   _media_glitem_refresh(melt);
 }
 
 static void
@@ -708,7 +729,7 @@ music_stop(void)
         Media_Element *melt;
         EINA_LIST_FREE(_cfg->elements, melt)
           {
-             _media_element_free(melt);
+             _media_element_del(melt);
           }
      }
    efl_del(_ply_emo);
