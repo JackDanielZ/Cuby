@@ -714,7 +714,8 @@ music_start(const char *filename, Eo *win)
    Media_Element *melt;
    EINA_LIST_FOREACH(_cfg->elements, itr, melt)
      {
-        melt->monitor = ecore_file_monitor_add(melt->path, _dir_update, melt);
+        if (melt->type == MEDIA_LIBRARY)
+           melt->monitor = ecore_file_monitor_add(melt->path, _dir_update, melt);
         _dir_update(melt, NULL, ECORE_FILE_EVENT_NONE, NULL);
      }
 
