@@ -77,14 +77,13 @@ _session_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info)
                   memcpy(s->cookie, cookie, end - cookie);
                }
           }
-        s->data_len = 0;
-        char url[1024];
-        sprintf(url, "%s/streams/info?sid=%s&stid=%s", _base_url, s->session_id, s->station_id);
-        ecore_con_url_additional_header_add(ec_url, "Cookie", s->cookie);
-        ecore_con_url_url_set(ec_url, url);
-        efl_key_data_set(ec_url, "jango_step", &_url_song_link_step);
-        ecore_con_url_get(ec_url);
      }
+   s->data_len = 0;
+   Jango_Ready_Cb func = efl_key_data_get(ec_url, "jango_ready_cb");
+   data = efl_key_data_get(ec_url, "jango_ready_data");
+   efl_key_data_set(ec_url, "jango_ready_cb", NULL);
+   efl_key_data_set(ec_url, "jango_ready_data", NULL);
+   if (func) func(data, s);
    return EINA_FALSE;
 }
 
@@ -111,12 +110,17 @@ _song_link_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info
         ecore_con_url_data_set(con_url, s);
         efl_key_data_set(con_url, "jango_step", &_url_song_data_step);
         ecore_con_url_get(con_url);
+        Jango_Ready_Cb func = efl_key_data_get(ec_url, "jango_ready_cb");
+        data = efl_key_data_get(ec_url, "jango_ready_data");
+        efl_key_data_set(con_url, "jango_ready_cb", func);
+        efl_key_data_set(con_url, "jango_ready_data", data);
      }
+   s->data_len = 0;
    return EINA_FALSE;
 }
 
 static Eina_Bool
-_song_data_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info)
+_song_data_get_cb(void *data, int type EINA_UNUSED, void *event_info)
 {
    Ecore_Con_Event_Url_Complete *url_complete = event_info;
    Ecore_Con_Url *ec_url = url_complete->url_con;
@@ -136,6 +140,12 @@ _song_data_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info
         fclose(fp);
         printf("Done\n");
      }
+   s->data_len = 0;
+   Jango_Ready_Cb func = efl_key_data_get(ec_url, "jango_ready_cb");
+   data = efl_key_data_get(ec_url, "jango_ready_data");
+   efl_key_data_set(ec_url, "jango_ready_cb", NULL);
+   efl_key_data_set(ec_url, "jango_ready_data", NULL);
+   if (func) func(data, s);
    return EINA_FALSE;
 }
 
@@ -160,7 +170,7 @@ jango_shutdown()
 }
 
 Jango_Session *
-jango_session_new(const char *keyword, const char *download_dir)
+jango_session_new(const char *keyword, const char *download_dir, Jango_Ready_Cb ready_cb, void *data)
 {
    char url[1024];
    Jango_Session *s = calloc(1, sizeof(*s));
@@ -172,7 +182,23 @@ jango_session_new(const char *keyword, const char *download_dir)
    ecore_con_url_additional_header_add(s->con_url, "User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0");
    ecore_con_url_data_set(s->con_url, s);
    efl_key_data_set(s->con_url, "jango_step", &_url_session_id_step);
+   efl_key_data_set(s->con_url, "jango_ready_cb", ready_cb);
+   efl_key_data_set(s->con_url, "jango_ready_data", data);
    ecore_con_url_get(s->con_url);
 
    return s;
+}
+
+void
+jango_fetch_next(Jango_Session *s, Jango_Ready_Cb ready_cb, void *data)
+{
+   char url[1024];
+   Ecore_Con_Url *ec_url = s->con_url;
+   sprintf(url, "%s/streams/info?sid=%s&stid=%s", _base_url, s->session_id, s->station_id);
+   ecore_con_url_additional_header_add(ec_url, "Cookie", s->cookie);
+   ecore_con_url_url_set(ec_url, url);
+   efl_key_data_set(ec_url, "jango_step", &_url_song_link_step);
+   efl_key_data_set(ec_url, "jango_ready_cb", ready_cb);
+   efl_key_data_set(ec_url, "jango_ready_data", data);
+   ecore_con_url_get(ec_url);
 }

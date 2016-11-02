@@ -35,9 +35,12 @@ Eina_Bool music_stop(void);
 Eo *icon_create(Eo *parent, const char *path, Eo **wref);
 Eo *button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_Cb cb_func, void *cb_data);
 
+typedef void (*Jango_Ready_Cb)(void *data, Jango_Session *s);
+
 Eina_Bool jango_init(void);
 void jango_shutdown(void);
-Jango_Session *jango_session_new(const char *keyword, const char *download_dir);
+Jango_Session *jango_session_new(const char *keyword, const char *download_dir, Jango_Ready_Cb ready_cb, void *data);
+void jango_fetch_next(Jango_Session *s, Jango_Ready_Cb ready_cb, void *data);
 
 #endif
 

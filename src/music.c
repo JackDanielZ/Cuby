@@ -290,6 +290,7 @@ _media_position_update(void *data, const Efl_Event *ev)
 static Media_Element *
 _media_find_next(Media_Element *current, Eina_Bool check_current)
 {
+   if (!current) current = _main_playing_media;
    if (check_current && (current->dynamic_elts == current->static_elts)) return current;
    if (current->static_elts)
       return _media_find_next(eina_list_data_get(current->static_elts), EINA_TRUE);
@@ -465,10 +466,6 @@ _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event eve
                    free(name);
                 }
               EINA_LIST_FREE(old_media_list, selt) _media_element_del(selt);
-              if (melt == _main_playing_media && !_playing_media)
-                {
-                   _media_play_set(_media_find_next(melt, EINA_FALSE), EINA_TRUE);
-                }
               break;
            }
       case MEDIA_PLAYLIST:
@@ -484,6 +481,21 @@ _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event eve
      }
    _media_tree_sanitize(melt);
    _media_glitem_refresh(melt);
+}
+
+static void
+_jango_media_play_when_ready_cb(void *data, Jango_Session *js EINA_UNUSED)
+{
+   Media_Element *elt = data;
+   if (elt != _main_playing_media) return;
+   _dir_update(elt, NULL, ECORE_FILE_EVENT_NONE, NULL);
+   _media_play_set(_media_find_next(_playing_media, EINA_FALSE), EINA_TRUE);
+}
+
+static void
+_jango_session_ready_cb(void *data, Jango_Session *s)
+{
+   jango_fetch_next(s, _jango_media_play_when_ready_cb, data);
 }
 
 static void
@@ -507,7 +519,7 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
              Eina_Tmpstr *dir;
              eina_file_mkdtemp("JANGO_XXXXXX", &dir);
              ecore_file_mkdir(dir);
-             melt->jango = jango_session_new(melt->name, dir);
+             melt->jango = jango_session_new(melt->name, dir, _jango_session_ready_cb, melt);
              melt->path = eina_stringshare_add(dir);
              melt->monitor = ecore_file_monitor_add(dir, _dir_update, melt);
              elm_object_text_set(_play_song_lb, "Loading...");
@@ -522,11 +534,18 @@ static void
 _media_next_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
    if (!_playing_media) return;
-   _media_play_set(_playing_media, EINA_FALSE);
-   Media_Element *next = _media_find_next(_playing_media, EINA_FALSE);
-   if (!next) next = _media_find_next(_main_playing_media, EINA_TRUE);
-   if (next) _media_play_set(next, EINA_TRUE);
-   else _main_playing_media = NULL;
+   if (_main_playing_media->type == MEDIA_JANGO)
+     {
+        jango_fetch_next(_main_playing_media->jango, _jango_media_play_when_ready_cb, _main_playing_media);
+     }
+   else
+     {
+        _media_play_set(_playing_media, EINA_FALSE);
+        Media_Element *next = _media_find_next(_playing_media, EINA_FALSE);
+        if (!next) next = _media_find_next(_main_playing_media, EINA_TRUE);
+        if (next) _media_play_set(next, EINA_TRUE);
+        else _main_playing_media = NULL;
+     }
 }
 
 static char *
