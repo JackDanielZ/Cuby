@@ -11,13 +11,6 @@
 
 typedef struct
 {
-   const char *filename;
-   Eina_Stringshare *artist;
-   Eina_Stringshare *song;
-} Jango_Song;
-
-typedef struct
-{
    const char *keyword;
    const char *download_dir;
    Ecore_Con_Url *con_url;
@@ -29,6 +22,18 @@ typedef struct
    int data_buf_len;
    int last_song_id;
 } Jango_Session;
+
+typedef struct
+{
+   const char *filename;
+   Eina_Stringshare *artist;
+   Eina_Stringshare *song;
+   Jango_Session *session;
+   void *user_data;
+   int download_progress;
+   int length;
+   int current_length;
+} Jango_Song;
 
 char* file_get_as_string(const char *filename);
 
@@ -42,12 +47,13 @@ Eina_Bool music_stop(void);
 Eo *icon_create(Eo *parent, const char *path, Eo **wref);
 Eo *button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_Cb cb_func, void *cb_data);
 
-typedef void (*Jango_Ready_Cb)(void *data, Jango_Session *session, Jango_Song *song);
+typedef void (*Jango_Session_Cb)(void *data, Jango_Session *session);
+typedef void (*Jango_Download_Cb)(void *data, Jango_Song *song);
 
 Eina_Bool jango_init(void);
 void jango_shutdown(void);
-Jango_Session *jango_session_new(const char *keyword, const char *download_dir, Jango_Ready_Cb ready_cb, void *data);
-void jango_fetch_next(Jango_Session *s, Jango_Ready_Cb ready_cb, void *data);
+Jango_Session *jango_session_new(const char *keyword, const char *download_dir, Jango_Session_Cb session_cb, void *data);
+void jango_fetch_next(Jango_Session *s, Jango_Download_Cb download_cb, void *data);
 
 #endif
 

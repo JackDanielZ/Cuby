@@ -492,26 +492,27 @@ _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event eve
 }
 
 static void
-_jango_media_play_when_ready_cb(void *data, Jango_Session *js EINA_UNUSED, Jango_Song *song)
+_jango_media_play_when_ready_cb(void *data, Jango_Song *song)
 {
    Media_Element *melt = data, *selt;
+   Eina_List *itr;
    if (melt != _main_playing_media) return;
-   char full_path[1024];
-   selt = calloc(1, sizeof(*selt));
-   selt->type = MEDIA_URI;
-   selt->parent = melt;
-   sprintf(full_path, "%s/%s", melt->path, song->filename);
-   selt->artist = eina_stringshare_add(song->artist);
-   selt->song = eina_stringshare_add(song->song);
-   selt->path = eina_stringshare_add(full_path);
-   selt->name = eina_stringshare_add(song->filename);
-   melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
-   _dir_update(melt, NULL, ECORE_FILE_EVENT_NONE, NULL);
-   _media_play_set(_media_find_next(_playing_media, EINA_FALSE), EINA_TRUE);
+   EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt)
+     {
+        if (!strcmp(selt->name, song->filename))
+          {
+             if (!selt->artist || selt->song) elm_object_item_del(selt->gl_item);
+             if (!selt->artist) selt->artist = eina_stringshare_add(song->artist);
+             if (!selt->song) selt->song = eina_stringshare_add(song->song);
+             if (!selt->playing && song->download_progress > 10)
+                _media_play_set(_media_find_next(_playing_media, EINA_FALSE), EINA_TRUE);
+             _media_glitem_refresh(selt);
+          }
+     }
 }
 
 static void
-_jango_session_ready_cb(void *data, Jango_Session *session, Jango_Song *song EINA_UNUSED)
+_jango_session_ready_cb(void *data, Jango_Session *session)
 {
    jango_fetch_next(session, _jango_media_play_when_ready_cb, data);
 }
