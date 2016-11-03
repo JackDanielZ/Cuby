@@ -83,8 +83,26 @@ _session_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info)
    data = efl_key_data_get(ec_url, "jango_ready_data");
    efl_key_data_set(ec_url, "jango_ready_cb", NULL);
    efl_key_data_set(ec_url, "jango_ready_data", NULL);
-   if (func) func(data, s);
+   if (func) func(data, s, NULL);
    return EINA_FALSE;
+}
+
+static Jango_Song *
+_song_create(const char *artist, const char *song_name)
+{
+   Jango_Song *song = calloc(1, sizeof(*song));
+   song->artist = eina_stringshare_add(artist);
+   song->song = eina_stringshare_add(song_name);
+   return song;
+}
+
+static void
+_song_delete(Jango_Song *song)
+{
+   if (!song) return;
+   eina_stringshare_del(song->artist);
+   eina_stringshare_del(song->song);
+   free(song);
 }
 
 static Eina_Bool
@@ -99,7 +117,29 @@ _song_link_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info
 
    if (url_complete->status)
      {
-        char *url = strstr(s->data_buf, "\"url\""), *end;
+        char *artist, *song, *url, *end;
+        Eina_Stringshare *shr_artist = NULL, *shr_song = NULL;
+        printf("Data %s\n", s->data_buf);
+        artist = strstr(s->data_buf, "\"artist\"");
+        if (artist)
+          {
+             artist = strstr(artist, ":\"");
+             if (artist) artist += 2;
+             end = strchr(artist, '\"');
+             shr_artist = eina_stringshare_add_length(artist, end - artist);
+             printf("Artist: %s\n", shr_artist);
+          }
+        song = strstr(s->data_buf, "\"song\"");
+        if (song)
+          {
+             song = strstr(song, ":\"");
+             if (song) song += 2;
+             end = strchr(song, '\"');
+             shr_song = eina_stringshare_add_length(song, end - song);
+             printf("Song: %s\n", shr_song);
+          }
+
+        url = strstr(s->data_buf, "\"url\"");
         if (!url) return EINA_TRUE;
         url = strstr(url, "http");
         end = strchr(url, '\"');
@@ -114,6 +154,8 @@ _song_link_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info
         data = efl_key_data_get(ec_url, "jango_ready_data");
         efl_key_data_set(con_url, "jango_ready_cb", func);
         efl_key_data_set(con_url, "jango_ready_data", data);
+        Jango_Song *jsong = _song_create(shr_artist, shr_song);
+        efl_key_data_set(con_url, "jango_song", jsong);
      }
    s->data_len = 0;
    return EINA_FALSE;
@@ -126,6 +168,7 @@ _song_data_get_cb(void *data, int type EINA_UNUSED, void *event_info)
    Ecore_Con_Url *ec_url = url_complete->url_con;
    Jango_Session *s = ecore_con_url_data_get(ec_url);
    void **step = efl_key_data_get(ec_url, "jango_step");
+   char filename[2556];
 
    if (!step || *step != _url_song_data_step) return EINA_TRUE;
 
@@ -134,7 +177,8 @@ _song_data_get_cb(void *data, int type EINA_UNUSED, void *event_info)
         char name[1024];
         const char *url = ecore_con_url_url_get(ec_url);
         char *fname = strrchr(url, '/') + 1;
-        sprintf(name, "%s/%.4d_%s", s->download_dir, ++s->last_song_id, fname);
+        sprintf(filename, "%.4d_%s", ++s->last_song_id, fname);
+        sprintf(name, "%s/%s", s->download_dir, filename);
         FILE *fp = fopen(name, "w");
         fwrite(s->data_buf, s->data_len, 1, fp);
         fclose(fp);
@@ -143,9 +187,13 @@ _song_data_get_cb(void *data, int type EINA_UNUSED, void *event_info)
    s->data_len = 0;
    Jango_Ready_Cb func = efl_key_data_get(ec_url, "jango_ready_cb");
    data = efl_key_data_get(ec_url, "jango_ready_data");
+   Jango_Song *song = efl_key_data_get(ec_url, "jango_song");
+   song->filename = eina_stringshare_add(filename);
    efl_key_data_set(ec_url, "jango_ready_cb", NULL);
    efl_key_data_set(ec_url, "jango_ready_data", NULL);
-   if (func) func(data, s);
+   efl_key_data_set(ec_url, "jango_song", NULL);
+   if (func) func(data, s, song);
+   _song_delete(song);
    return EINA_FALSE;
 }
 

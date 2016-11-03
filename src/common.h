@@ -11,6 +11,13 @@
 
 typedef struct
 {
+   const char *filename;
+   Eina_Stringshare *artist;
+   Eina_Stringshare *song;
+} Jango_Song;
+
+typedef struct
+{
    const char *keyword;
    const char *download_dir;
    Ecore_Con_Url *con_url;
@@ -35,7 +42,7 @@ Eina_Bool music_stop(void);
 Eo *icon_create(Eo *parent, const char *path, Eo **wref);
 Eo *button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_Cb cb_func, void *cb_data);
 
-typedef void (*Jango_Ready_Cb)(void *data, Jango_Session *s);
+typedef void (*Jango_Ready_Cb)(void *data, Jango_Session *session, Jango_Song *song);
 
 Eina_Bool jango_init(void);
 void jango_shutdown(void);

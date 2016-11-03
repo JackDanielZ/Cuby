@@ -50,6 +50,8 @@ struct _Media_Element
    Eina_List *dynamic_elts;
    Jango_Session *jango;
    Elm_Genlist_Item *gl_item;
+   Eina_Stringshare *artist;
+   Eina_Stringshare *song;
    Eina_Bool expanded : 1;
    Eina_Bool playing : 1;
 };
@@ -106,6 +108,12 @@ static char *
 _media_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED)
 {
    Media_Element *melt = data;
+   if (melt->artist && melt->song)
+     {
+        char *text = malloc(strlen(melt->artist) + strlen(melt->song) + 50);
+        sprintf(text, "%s - %s", melt->artist, melt->song);
+        return text;
+     }
    return strdup(melt->name?melt->name:melt->path);
 }
 
@@ -484,18 +492,28 @@ _dir_update(void *data, Ecore_File_Monitor *em EINA_UNUSED, Ecore_File_Event eve
 }
 
 static void
-_jango_media_play_when_ready_cb(void *data, Jango_Session *js EINA_UNUSED)
+_jango_media_play_when_ready_cb(void *data, Jango_Session *js EINA_UNUSED, Jango_Song *song)
 {
-   Media_Element *elt = data;
-   if (elt != _main_playing_media) return;
-   _dir_update(elt, NULL, ECORE_FILE_EVENT_NONE, NULL);
+   Media_Element *melt = data, *selt;
+   if (melt != _main_playing_media) return;
+   char full_path[1024];
+   selt = calloc(1, sizeof(*selt));
+   selt->type = MEDIA_URI;
+   selt->parent = melt;
+   sprintf(full_path, "%s/%s", melt->path, song->filename);
+   selt->artist = eina_stringshare_add(song->artist);
+   selt->song = eina_stringshare_add(song->song);
+   selt->path = eina_stringshare_add(full_path);
+   selt->name = eina_stringshare_add(song->filename);
+   melt->dynamic_elts = eina_list_append(melt->dynamic_elts, selt);
+   _dir_update(melt, NULL, ECORE_FILE_EVENT_NONE, NULL);
    _media_play_set(_media_find_next(_playing_media, EINA_FALSE), EINA_TRUE);
 }
 
 static void
-_jango_session_ready_cb(void *data, Jango_Session *s)
+_jango_session_ready_cb(void *data, Jango_Session *session, Jango_Song *song EINA_UNUSED)
 {
-   jango_fetch_next(s, _jango_media_play_when_ready_cb, data);
+   jango_fetch_next(session, _jango_media_play_when_ready_cb, data);
 }
 
 static void
