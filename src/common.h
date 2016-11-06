@@ -52,7 +52,11 @@ typedef void (*Jango_Download_Cb)(void *data, Jango_Song *song);
 
 Eina_Bool jango_init(void);
 void jango_shutdown(void);
-Jango_Session *jango_session_new(const char *keyword, const char *download_dir, Jango_Session_Cb session_cb, void *data);
+
+Jango_Session *jango_session_new(void);
+void jango_download_dir_set(Jango_Session *session, const char *download_dir);
+void jango_activate(Jango_Session *session, const char *keyword, Jango_Session_Cb session_cb, void *data);
+
 void jango_fetch_next(Jango_Session *s, Jango_Download_Cb download_cb, void *data);
 
 #endif

@@ -264,12 +264,22 @@ jango_shutdown()
 }
 
 Jango_Session *
-jango_session_new(const char *keyword, const char *download_dir, Jango_Session_Cb session_cb, void *data)
+jango_session_new(void)
+{
+   return calloc(1, sizeof(Jango_Session));
+}
+
+void
+jango_download_dir_set(Jango_Session *s, const char *download_dir)
+{
+   if (s) s->download_dir = eina_stringshare_add(download_dir);
+}
+
+void
+jango_activate(Jango_Session *s, const char *keyword, Jango_Session_Cb session_cb, void *data)
 {
    char url[1024];
-   Jango_Session *s = calloc(1, sizeof(*s));
    s->keyword = eina_stringshare_add(keyword);
-   s->download_dir = eina_stringshare_add(download_dir);
 
    sprintf(url, "%s/music/%s", _base_url, keyword);
    s->con_url = ecore_con_url_new(url);
@@ -280,7 +290,6 @@ jango_session_new(const char *keyword, const char *download_dir, Jango_Session_C
    efl_key_data_set(s->con_url, "jango_session_data", data);
    ecore_con_url_get(s->con_url);
 
-   return s;
 }
 
 void

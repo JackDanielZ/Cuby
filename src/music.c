@@ -556,7 +556,9 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
              Eina_Tmpstr *dir;
              eina_file_mkdtemp("JANGO_XXXXXX", &dir);
              ecore_file_mkdir(dir);
-             melt->jango = jango_session_new(melt->name, dir, _jango_session_ready_cb, melt);
+             melt->jango = jango_session_new();
+             jango_download_dir_set(melt->jango, dir);
+             jango_activate(melt->jango, melt->name, _jango_session_ready_cb, melt);
              melt->path = eina_stringshare_add(dir);
              melt->monitor = ecore_file_monitor_add(dir, _dir_update, melt);
              elm_object_text_set(_play_song_lb, "Loading...");
