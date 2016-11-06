@@ -53,6 +53,7 @@ struct _Media_Element
    Eina_Stringshare *artist;
    Eina_Stringshare *song;
    Eina_Bool expanded : 1;
+   Eina_Bool selected: 1;
    Eina_Bool playing : 1;
 };
 
@@ -176,6 +177,7 @@ _media_glitem_create(Media_Element *melt)
      }
    efl_weak_ref(&(melt->gl_item));
    elm_genlist_item_expanded_set(melt->gl_item, melt->expanded);
+   elm_genlist_item_selected_set(melt->gl_item, melt->selected);
 }
 
 static void
@@ -257,6 +259,22 @@ _contract_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_
 {
    Elm_Object_Item *glit = event_info;
    elm_genlist_item_expanded_set(glit, EINA_FALSE);
+}
+
+static void
+_select(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
+{
+   Elm_Object_Item *glit = event_info;
+   Media_Element *melt = elm_object_item_data_get(glit);
+   melt->selected = EINA_TRUE;
+}
+
+static void
+_unselect(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
+{
+   Elm_Object_Item *glit = event_info;
+   Media_Element *melt = elm_object_item_data_get(glit);
+   melt->selected = EINA_FALSE;
 }
 
 static void
@@ -1186,6 +1204,8 @@ music_ui_get(Eo *parent)
    evas_object_smart_callback_add(_media_gl, "contract,request", _contract_req, NULL);
    evas_object_smart_callback_add(_media_gl, "expanded", _expand, NULL);
    evas_object_smart_callback_add(_media_gl, "contracted", _contract, NULL);
+   evas_object_smart_callback_add(_media_gl, "selected", _select, NULL);
+   evas_object_smart_callback_add(_media_gl, "unselected", _unselect, NULL);
 
    _media_genlist_refresh();
 
