@@ -525,7 +525,7 @@ _media_play_pause_cb(void *data EINA_UNUSED, Eo *obj EINA_UNUSED, void *event_in
    Media_Element *melt = NULL;
    if (sel) melt = elm_object_item_data_get(sel);
 
-   if (melt != _main_playing_media)
+   if (melt && melt != _main_playing_media)
      {
         if (melt->type != MEDIA_JANGO)
           {
