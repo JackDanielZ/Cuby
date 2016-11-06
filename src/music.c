@@ -504,7 +504,7 @@ _jango_media_play_when_ready_cb(void *data, Jango_Song *song)
              if (!selt->artist || selt->song) elm_object_item_del(selt->gl_item);
              if (!selt->artist) selt->artist = eina_stringshare_add(song->artist);
              if (!selt->song) selt->song = eina_stringshare_add(song->song);
-             if (!selt->playing && song->download_progress > 10)
+             if (!selt->playing && song->download_progress > 3)
                 _media_play_set(_media_find_next(_playing_media, EINA_FALSE), EINA_TRUE);
              _media_glitem_refresh(selt);
           }
