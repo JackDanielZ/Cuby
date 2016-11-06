@@ -222,7 +222,7 @@ _media_genlist_refresh()
 }
 
 static void
-_expand(void *data EINA_UNUSED, Evas_Object *cont EINA_UNUSED, void *event_info)
+_media_genlist_expand(void *data EINA_UNUSED, Evas_Object *cont EINA_UNUSED, void *event_info)
 {
    Elm_Object_Item *glit = event_info;
    Media_Element *melt = elm_object_item_data_get(glit) ,*selt;
@@ -239,7 +239,7 @@ _expand(void *data EINA_UNUSED, Evas_Object *cont EINA_UNUSED, void *event_info)
 }
 
 static void
-_contract(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
+_media_genlist_contract(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
    Elm_Object_Item *glit = event_info;
    Media_Element *melt = elm_object_item_data_get(glit);
@@ -248,21 +248,21 @@ _contract(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info
 }
 
 static void
-_expand_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
+_media_genlist_expand_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
    Elm_Object_Item *glit = event_info;
    elm_genlist_item_expanded_set(glit, EINA_TRUE);
 }
 
 static void
-_contract_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
+_media_genlist_contract_req(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
    Elm_Object_Item *glit = event_info;
    elm_genlist_item_expanded_set(glit, EINA_FALSE);
 }
 
 static void
-_select(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
+_media_genlist_select(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
    Elm_Object_Item *glit = event_info;
    Media_Element *melt = elm_object_item_data_get(glit);
@@ -270,7 +270,7 @@ _select(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
 }
 
 static void
-_unselect(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
+_media_genlist_unselect(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
    Elm_Object_Item *glit = event_info;
    Media_Element *melt = elm_object_item_data_get(glit);
@@ -1200,12 +1200,12 @@ music_ui_get(Eo *parent)
    elm_drag_item_container_add(_media_gl, 0.5, 0.3,
          _gl_item_getcb, _gl_dnd_default_anim_data_getcb);
 
-   evas_object_smart_callback_add(_media_gl, "expand,request", _expand_req, NULL);
-   evas_object_smart_callback_add(_media_gl, "contract,request", _contract_req, NULL);
-   evas_object_smart_callback_add(_media_gl, "expanded", _expand, NULL);
-   evas_object_smart_callback_add(_media_gl, "contracted", _contract, NULL);
-   evas_object_smart_callback_add(_media_gl, "selected", _select, NULL);
-   evas_object_smart_callback_add(_media_gl, "unselected", _unselect, NULL);
+   evas_object_smart_callback_add(_media_gl, "expand,request", _media_genlist_expand_req, NULL);
+   evas_object_smart_callback_add(_media_gl, "contract,request", _media_genlist_contract_req, NULL);
+   evas_object_smart_callback_add(_media_gl, "expanded", _media_genlist_expand, NULL);
+   evas_object_smart_callback_add(_media_gl, "contracted", _media_genlist_contract, NULL);
+   evas_object_smart_callback_add(_media_gl, "selected", _media_genlist_select, NULL);
+   evas_object_smart_callback_add(_media_gl, "unselected", _media_genlist_unselect, NULL);
 
    _media_genlist_refresh();
 
