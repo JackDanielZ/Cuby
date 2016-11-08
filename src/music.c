@@ -74,6 +74,8 @@ static Eo *_next_bt = NULL;
 
 static Media_Element *_playing_media = NULL, *_main_playing_media = NULL;
 
+static Jango_Session *_jango_search_session = NULL;
+
 static Eo *_selected_gl = NULL;
 
 static void
@@ -636,6 +638,155 @@ _media_add(void *data, Evas_Object *obj, void *event_info EINA_UNUSED)
    evas_object_del(_popup);
 }
 
+static char *
+_jango_search_item_text_get(void *data, Evas_Object *obj EINA_UNUSED, const char *part EINA_UNUSED)
+{
+   Jango_Search_Item *item = data;
+   return strdup(item->label);
+}
+
+static Eina_Bool
+_calc_list(Eo *list, Eo *resize_rect)
+{
+   int count = elm_genlist_items_count(list);
+
+   if (count == 0) return EINA_FALSE;
+   else
+     {
+        Evas_Object *track;
+        Elm_Object_Item *item;
+        Evas_Coord w, h;
+        Eina_List *realized_items;
+
+        realized_items = elm_genlist_realized_items_get(list);
+        if (!realized_items) return EINA_FALSE;
+
+        item = realized_items->data;
+        track = elm_object_item_track(item);
+        evas_object_geometry_get(track, NULL, NULL, &w, &h);
+        elm_object_item_untrack(item);
+
+        eina_list_free(realized_items);
+
+        if (count < 8)
+          {
+             elm_scroller_policy_set(list, ELM_SCROLLER_POLICY_OFF, ELM_SCROLLER_POLICY_OFF);
+             evas_object_size_hint_min_set(resize_rect, w, h * count);
+          }
+        else
+          {
+             elm_scroller_policy_set(list, ELM_SCROLLER_POLICY_ON, ELM_SCROLLER_POLICY_ON);
+             evas_object_size_hint_min_set(resize_rect, w, h * 8);
+          }
+     }
+
+   return EINA_TRUE;
+}
+
+static Evas_Object *
+_app_list_min_set(Eo *hover, Eo *list, Eo **resize_rect, Evas_Coord w, Evas_Coord h)
+{
+   Eo *table = elm_table_add(hover);
+   Eo *rect = evas_object_rectangle_add(evas_object_evas_get(table));
+
+   evas_object_size_hint_min_set(rect, w, h);
+   evas_object_color_set(rect, 0, 0, 0, 0);
+   evas_object_size_hint_align_set(rect, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(rect, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+   elm_table_pack(table, rect, 0, 0, 1, 1);
+   evas_object_size_hint_align_set(list, EVAS_HINT_FILL, EVAS_HINT_FILL);
+   evas_object_size_hint_weight_set(list, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+
+   elm_table_pack(table, list, 0, 0, 1, 1);
+   evas_object_show(rect);
+
+   *resize_rect = rect;
+
+   return table;
+}
+
+static void
+_search_gl_item_select(void *data, Evas_Object *obj, void *event_info)
+{
+   Eo *gl_item = event_info;
+   Jango_Search_Item *jitem = elm_object_item_data_get(gl_item);
+   Eo *entry = data;
+   elm_entry_entry_set(entry, jitem->label);
+}
+
+static void
+_search_gl_item_del(void *data, const Efl_Event *ev EINA_UNUSED)
+{
+   Jango_Search_Item *jitem = data;
+   jango_search_item_del(jitem);
+}
+
+static void
+_search_ready(void *data, Eina_List *items)
+{
+   static Elm_Genlist_Item_Class *itc = NULL;
+   static Eo *hover = NULL, *list = NULL, *rect = NULL;
+   Eo *entry = data;
+   Jango_Search_Item *item;
+   if (!hover)
+     {
+        hover = elm_hover_add(_win);
+        elm_object_style_set(hover, "hoversel_vertical/default");
+        efl_weak_ref(&hover);
+
+        list = elm_genlist_add(hover);
+        efl_weak_ref(&list);
+        elm_scroller_policy_set(list, ELM_SCROLLER_POLICY_OFF, ELM_SCROLLER_POLICY_OFF);
+        elm_object_style_set(list, "popup/no_inset_shadow");
+        evas_object_size_hint_align_set(list, EVAS_HINT_FILL, EVAS_HINT_FILL);
+        evas_object_size_hint_weight_set(list, EVAS_HINT_EXPAND, EVAS_HINT_EXPAND);
+
+        Eo *table = _app_list_min_set(hover, list, &rect, 0, 0);
+        efl_weak_ref(&rect);
+        elm_object_part_content_set(hover, "bottom", table);
+        elm_hover_target_set(hover, entry);
+        elm_hover_parent_set(hover, _win);
+     }
+
+   elm_genlist_clear(list);
+   if (!itc)
+     {
+        itc = elm_genlist_item_class_new();
+        itc->item_style = "default";
+        itc->func.text_get = _jango_search_item_text_get;
+     }
+
+   EINA_LIST_FREE(items, item)
+     {
+        Eo *gl_item = elm_genlist_item_append(list, itc, item, NULL, ELM_GENLIST_ITEM_NONE, _search_gl_item_select, entry);
+        efl_event_callback_add(gl_item, EFL_EVENT_DEL, _search_gl_item_del, NULL);
+        printf("Item label %s url %s\n", item->label, item->url);
+     }
+   if (!_calc_list(list, rect)) evas_object_size_hint_min_set(rect, 50, 100);
+   evas_object_show(list);
+   evas_object_show(hover);
+}
+
+static void
+_media_add_entry_changed(void *data, const Efl_Event *ev)
+{
+   Media_Type type = (intptr_t)data;
+   if (!_jango_search_session) _jango_search_session = jango_session_new();
+   if (type == MEDIA_JANGO)
+     {
+        printf("Text: %s\n", elm_object_part_text_get(ev->object, NULL));
+        jango_search(_jango_search_session, elm_object_part_text_get(ev->object, NULL), _search_ready, ev->object);
+     }
+}
+
+static void
+_search_gl_item_selected_cb(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED,
+                           void *event_info)
+{
+   const char *txt = elm_object_item_text_get(event_info);
+   printf("'item,selected' callback is called. (selected item : %s)\n", txt);
+}
+
 static void
 _media_new_or_modify_show(Media_Element *melt, Media_Type mtype, Eina_Bool is_add)
 {
@@ -681,8 +832,12 @@ _media_new_or_modify_show(Media_Element *melt, Media_Type mtype, Eina_Bool is_ad
    evas_object_size_hint_align_set(entry, EVAS_HINT_FILL, EVAS_HINT_FILL);
    elm_entry_line_wrap_set(entry, ELM_WRAP_CHAR);
    elm_box_pack_end(title_box, entry);
+   efl_event_callback_add
+      (entry, ELM_ENTRY_EVENT_CHANGED_USER, _media_add_entry_changed, (void *)mtype);
    evas_object_show(entry);
-   if (melt) elm_entry_entry_set(entry, melt->name);
+   if (melt) elm_object_part_text_set(entry, "guide", melt->name);
+   evas_object_smart_callback_add(entry, "item,selected",
+                                  _search_gl_item_selected_cb, NULL);
 
    Eo *fs_entry = NULL;
    if (mtype == MEDIA_LIBRARY)

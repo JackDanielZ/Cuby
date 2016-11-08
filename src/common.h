@@ -35,6 +35,12 @@ typedef struct
    int current_length;
 } Jango_Song;
 
+typedef struct
+{
+   const char *label;
+   const char *url;
+} Jango_Search_Item;
+
 char* file_get_as_string(const char *filename);
 
 Eina_Bool memos_start(const char *filename, Eo *win);
@@ -49,6 +55,7 @@ Eo *button_create(Eo *parent, const char *text, Eo *icon, Eo **wref, Evas_Smart_
 
 typedef void (*Jango_Session_Cb)(void *data, Jango_Session *session);
 typedef void (*Jango_Download_Cb)(void *data, Jango_Song *song);
+typedef void (*Jango_Search_Ready_Cb)(void *data, Eina_List *items); /* List of Jango_Search_Item */
 
 Eina_Bool jango_init(void);
 void jango_shutdown(void);
@@ -56,6 +63,8 @@ void jango_shutdown(void);
 Jango_Session *jango_session_new(void);
 void jango_download_dir_set(Jango_Session *session, const char *download_dir);
 void jango_activate(Jango_Session *session, const char *keyword, Jango_Session_Cb session_cb, void *data);
+void jango_search(Jango_Session *session, const char *keyword, Jango_Search_Ready_Cb search_cb, void *data);
+void jango_search_item_del(Jango_Search_Item *item);
 
 void jango_fetch_next(Jango_Session *s, Jango_Download_Cb download_cb, void *data);
 
