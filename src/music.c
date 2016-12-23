@@ -706,7 +706,7 @@ _app_list_min_set(Eo *hover, Eo *list, Eo **resize_rect, Evas_Coord w, Evas_Coor
 }
 
 static void
-_search_gl_item_select(void *data, Evas_Object *obj, void *event_info)
+_search_gl_item_select(void *data, Evas_Object *obj EINA_UNUSED, void *event_info)
 {
    Eo *gl_item = event_info;
    Jango_Search_Item *jitem = elm_object_item_data_get(gl_item);

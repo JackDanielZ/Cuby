@@ -7,54 +7,128 @@
 #include "common.h"
 
 static const char *_base_url = "http://www.jango.com";
-static void *_url_session_id_step = (void *)0;
-static void *_url_song_link_step = (void *)1;
-static void *_url_song_data_step = (void *)2;
-static void *_url_search_step = (void *)3;
 
 static int _init_cnt = 0;
 
-static Eina_Bool
-_data_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info)
+static void
+_can_read_changed(void *data EINA_UNUSED, const Efl_Event *ev)
 {
-   Ecore_Con_Event_Url_Data *url_data = event_info;
-   Ecore_Con_Url *ec_url = url_data->url_con;
-   Jango_Session *s = ecore_con_url_data_get(ec_url);
+   static int max_size = 16384;
+   Eina_Rw_Slice slice = { .mem = NULL };
+   Eo *dialer = ev->object;
 
-   void **step = efl_key_data_get(ec_url, "jango_step");
-   if (!step ||
-         (*step != _url_session_id_step &&
-          *step != _url_song_link_step &&
-          *step != _url_search_step))
-         return EINA_TRUE;
+   if (efl_key_data_get(dialer, "can_read_changed")) return;
+   efl_key_data_set(dialer, "can_read_changed", dialer);
 
-   if (url_data->size > (s->data_buf_len - s->data_len))
+   Jango_Session *s = efl_key_data_get(dialer, "Jango Session");
+   if (s)
      {
-        s->data_buf_len = s->data_len + url_data->size;
-        s->data_buf = realloc(s->data_buf, s->data_buf_len + 1);
-     }
-   memcpy(s->data_buf + s->data_len, url_data->data, url_data->size);
-   s->data_len += url_data->size;
-   s->data_buf[s->data_len] = '\0';
+        slice.mem = malloc(max_size);
+        slice.len = max_size;
 
-   return EINA_FALSE;
+        while (efl_io_reader_can_read_get(dialer))
+          {
+             if (efl_io_reader_read(dialer, &slice)) goto ret;
+             if (slice.len > (s->data_buf_len - s->data_len))
+               {
+                  s->data_buf_len = s->data_len + slice.len;
+                  s->data_buf = realloc(s->data_buf, s->data_buf_len + 1);
+               }
+             memcpy(s->data_buf + s->data_len, slice.mem, slice.len);
+             s->data_len += slice.len;
+             s->data_buf[s->data_len] = '\0';
+             slice.len = max_size;
+          }
+     }
+   else
+     {
+        Jango_Song *song = efl_key_data_get(dialer, "Jango Song");
+        if (song)
+          {
+             if (!song->length)
+               {
+                  Efl_Net_Http_Header *hdr;
+                  Eina_Iterator *hdrs = efl_net_dialer_http_response_headers_get(dialer);
+                  EINA_ITERATOR_FOREACH(hdrs, hdr)
+                    {
+                       if (!strcmp(hdr->key, "Content-Length"))
+                         {
+                            song->length = atoi(hdr->value);
+                         }
+                    }
+                  eina_iterator_free(hdrs);
+               }
+
+             char name[1024];
+             sprintf(name, "%s/%s", song->session->download_dir, song->filename);
+             FILE *fp = fopen(name, "a");
+             slice.mem = malloc(max_size);
+             slice.len = max_size;
+
+             while (efl_io_reader_can_read_get(dialer))
+               {
+                  if (efl_io_reader_read(dialer, &slice)) goto ret;
+                  if (slice.len) fwrite(slice.mem, slice.len, 1, fp);
+                  song->current_length += slice.len;
+                  slice.len = max_size;
+               }
+             fclose(fp);
+             song->download_progress = (song->current_length * 100) / song->length;
+
+             Jango_Download_Cb func = efl_key_data_get(dialer, "Jango Download Cb");
+             data = efl_key_data_get(dialer, "Jango Download Data");
+             if (func) func(data, song);
+
+          }
+     }
+ret:
+   free(slice.mem);
+   efl_key_data_set(dialer, "can_read_changed", NULL);
 }
 
-static Eina_Bool
-_session_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info)
+static Efl_Net_Dialer_Http *
+_dialer_create(Eina_Bool is_get_method, const char *data, Efl_Event_Cb cb)
 {
-   Ecore_Con_Event_Url_Complete *url_complete = event_info;
-   Ecore_Con_Url *ec_url = url_complete->url_con;
-   Jango_Session *s = ecore_con_url_data_get(ec_url);
-   void **step = efl_key_data_get(ec_url, "jango_step");
+   Eo *dialer = efl_add(EFL_NET_DIALER_HTTP_CLASS, ecore_main_loop_get(),
+         efl_net_dialer_http_method_set(efl_added, is_get_method?"GET":"POST"),
+         efl_net_dialer_proxy_set(efl_added, NULL),
+         efl_net_dialer_http_request_header_add(efl_added, "Accept-Encoding", "identity"),
+         efl_net_dialer_http_request_header_add(efl_added, "User-Agent",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0"),
+         efl_event_callback_add(efl_added, EFL_IO_READER_EVENT_CAN_READ_CHANGED, _can_read_changed, NULL));
+   if (cb)
+      efl_event_callback_add(dialer, EFL_IO_READER_EVENT_EOS, cb, NULL);
 
-   if (!step || *step != _url_session_id_step) return EINA_TRUE;
+   if (!is_get_method && data)
+     {
+        Eina_Slice slice = { .mem = data, .len = strlen(data) };
+        Eo *buffer = efl_add(EFL_IO_BUFFER_CLASS, efl_loop_get(dialer),
+              efl_name_set(efl_added, "post-buffer"),
+              efl_io_closer_close_on_destructor_set(efl_added, EINA_TRUE),
+              efl_io_closer_close_on_exec_set(efl_added, EINA_TRUE));
+        efl_io_writer_write(buffer, &slice, NULL);
 
-   if (url_complete->status)
+        efl_add(EFL_IO_COPIER_CLASS, efl_loop_get(dialer),
+              efl_name_set(efl_added, "copier-buffer-dialer"),
+              efl_io_copier_source_set(efl_added, buffer),
+              efl_io_copier_destination_set(efl_added, dialer),
+              efl_io_closer_close_on_destructor_set(efl_added, EINA_FALSE));
+     }
+
+   return dialer;
+}
+
+static void
+_session_get_cb(void *data EINA_UNUSED, const Efl_Event *ev)
+{
+   Efl_Net_Dialer_Http *dialer = ev->object;
+   Jango_Session *s = efl_key_data_get(dialer, "Jango Session");
+
+   if (s->data_len)
      {
         char *sid, *stid, *end;
-        const char *hdr;
-        const Eina_List *hdrs, *itr;
+        Efl_Net_Http_Header *hdr;
+        Eina_Iterator *hdrs;
         sid = strstr(s->data_buf, "_jm.session_id");
         if (sid)
           {
@@ -73,26 +147,22 @@ _session_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info)
              memcpy(s->station_id, stid, end - stid);
              printf("Station id: %s\n", s->station_id);
           }
-        hdrs = ecore_con_url_response_headers_get(ec_url);
-        EINA_LIST_FOREACH(hdrs, itr, hdr)
+        hdrs = efl_net_dialer_http_response_headers_get(dialer);
+        EINA_ITERATOR_FOREACH(hdrs, hdr)
           {
-             char *cookie = strstr(hdr, "Set-Cookie: _jango_s");
-             if (cookie)
+             if (!strcmp(hdr->key, "Set-Cookie") && strstr(hdr->value, "_jango_s"))
                {
-                  cookie = strchr(cookie, '_');
-                  end = strchr(cookie, ';');
-                  s->cookie = calloc(end - cookie + 1, 1);
-                  memcpy(s->cookie, cookie, end - cookie);
+                  s->cookie = strdup(hdr->value);
                }
           }
+        eina_iterator_free(hdrs);
      }
    s->data_len = 0;
-   Jango_Session_Cb func = efl_key_data_get(ec_url, "jango_session_cb");
-   data = efl_key_data_get(ec_url, "jango_session_data");
-   efl_key_data_set(ec_url, "jango_session_cb", NULL);
-   efl_key_data_set(ec_url, "jango_session_data", NULL);
+   Jango_Session_Cb func = efl_key_data_get(dialer, "Jango Session Cb");
+   data = efl_key_data_get(dialer, "Jango Session Data");
+   efl_key_data_set(dialer, "Jango Session Cb", NULL);
+   efl_key_data_set(dialer, "Jango Session Data", NULL);
    if (func) func(data, s);
-   return EINA_FALSE;
 }
 
 static Jango_Song *
@@ -114,17 +184,28 @@ _song_delete(Jango_Song *song)
    free(song);
 }
 
-static Eina_Bool
-_song_link_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info)
+static void
+_song_data_end_cb(void *data, const Efl_Event *ev)
 {
-   Ecore_Con_Event_Url_Complete *url_complete = event_info;
-   Ecore_Con_Url *ec_url = url_complete->url_con;
-   Jango_Session *s = ecore_con_url_data_get(ec_url);
-   void **step = efl_key_data_get(ec_url, "jango_step");
+   Efl_Net_Dialer_Http *dialer = ev->object;
 
-   if (!step || *step != _url_song_link_step) return EINA_TRUE;
+   Jango_Download_Cb func = efl_key_data_get(dialer, "Jango Download Cb");
+   data = efl_key_data_get(dialer, "Jango Download Data");
+   Jango_Song *song = efl_key_data_get(dialer, "Jango Song");
+   efl_key_data_set(dialer, "Jango Download Cb", NULL);
+   efl_key_data_set(dialer, "Jango Download Data", NULL);
+   efl_key_data_set(dialer, "jango Song", NULL);
+   if (func) func(data, song);
+   _song_delete(song);
+}
 
-   if (url_complete->status)
+static void
+_song_link_get_cb(void *data EINA_UNUSED, const Efl_Event *ev)
+{
+   Efl_Net_Dialer_Http *dialer = ev->object;
+   Jango_Session *s = efl_key_data_get(dialer, "Jango Session");
+
+   if (s->data_len)
      {
         char *artist, *song, *url, *end;
         Eina_Stringshare *shr_artist = NULL, *shr_song = NULL;
@@ -149,7 +230,7 @@ _song_link_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info
           }
 
         url = strstr(s->data_buf, "\"url\"");
-        if (!url) return EINA_TRUE;
+        if (!url) return;
         url = strstr(url, "http");
         end = strchr(url, '\"');
         if (end) *end = '\0';
@@ -157,105 +238,32 @@ _song_link_get_cb(void *data EINA_UNUSED, int type EINA_UNUSED, void *event_info
 
         s->data_len = 0;
 
-        Ecore_Con_Url *con_url = ecore_con_url_new(url);
-        ecore_con_url_data_set(con_url, s);
-        efl_key_data_set(con_url, "jango_step", &_url_song_data_step);
-        ecore_con_url_get(con_url);
-
         Jango_Song *jsong = _song_create(s, shr_artist, shr_song);
         char filename[100];
         char *url_filename = strrchr(url, '/') + 1;
         sprintf(filename, "%.4d_%s", ++s->last_song_id, url_filename);
         jsong->filename = eina_stringshare_add(filename);
 
-        Jango_Download_Cb func = efl_key_data_get(ec_url, "jango_download_cb");
-        data = efl_key_data_get(ec_url, "jango_download_data");
-        efl_key_data_set(con_url, "jango_download_cb", func);
-        efl_key_data_set(con_url, "jango_download_data", data);
-        efl_key_data_set(con_url, "jango_song", jsong);
-
+        Jango_Download_Cb func = efl_key_data_get(dialer, "Jango Download Cb");
+        data = efl_key_data_get(dialer, "Jango Download Data");
         if (func) func(data, jsong);
+
+        dialer = _dialer_create(EINA_TRUE, NULL, _song_data_end_cb);
+        efl_key_data_set(dialer, "Jango Song", jsong);
+        efl_key_data_set(dialer, "Jango Download Cb", func);
+        efl_key_data_set(dialer, "Jango Download Data", data);
+        efl_net_dialer_dial(dialer, url);
      }
    s->data_len = 0;
-   return EINA_FALSE;
 }
 
-static Eina_Bool
-_song_data_get_cb(void *data, int type EINA_UNUSED, void *event_info)
+static void
+_search_data_end_cb(void *data, const Efl_Event *ev)
 {
-   Ecore_Con_Event_Url_Data *url_data = event_info;
-   Ecore_Con_Url *ec_url = url_data->url_con;
-   void **step = efl_key_data_get(ec_url, "jango_step");
-   char name[1024];
+   Efl_Net_Dialer_Http *dialer = ev->object;
+   Jango_Session *s = efl_key_data_get(dialer, "Jango Session");
 
-   if (!step || *step != _url_song_data_step) return EINA_TRUE;
-
-   Jango_Song *song = efl_key_data_get(ec_url, "jango_song");
-   if (!song->length)
-     {
-        const Eina_List *hdrs = ecore_con_url_response_headers_get(ec_url), *itr;
-        char *hdr;
-        EINA_LIST_FOREACH(hdrs, itr, hdr)
-          {
-             char *len_str = strstr(hdr, "Content-Length");
-             if (len_str)
-               {
-                  len_str = strstr(len_str, ": ");
-                  len_str++;
-                  song->length = atoi(len_str);
-               }
-          }
-     }
-
-   sprintf(name, "%s/%s", song->session->download_dir, song->filename);
-   FILE *fp = fopen(name, "a");
-   fwrite(url_data->data, url_data->size, 1, fp);
-   fclose(fp);
-   song->current_length += url_data->size;
-   song->download_progress = (song->current_length * 100) / song->length;
-
-   Jango_Download_Cb func = efl_key_data_get(ec_url, "jango_download_cb");
-   data = efl_key_data_get(ec_url, "jango_download_data");
-   if (func) func(data, song);
-   return EINA_FALSE;
-}
-
-static Eina_Bool
-_song_data_end_cb(void *data, int type EINA_UNUSED, void *event_info)
-{
-   Ecore_Con_Event_Url_Complete *url_complete = event_info;
-   Ecore_Con_Url *ec_url = url_complete->url_con;
-   void **step = efl_key_data_get(ec_url, "jango_step");
-
-   if (!step || *step != _url_song_data_step) return EINA_TRUE;
-
-   if (url_complete->status)
-     {
-        printf("Done\n");
-     }
-   Jango_Download_Cb func = efl_key_data_get(ec_url, "jango_download_cb");
-   data = efl_key_data_get(ec_url, "jango_download_data");
-   Jango_Song *song = efl_key_data_get(ec_url, "jango_song");
-   efl_key_data_set(ec_url, "jango_download_cb", NULL);
-   efl_key_data_set(ec_url, "jango_download_data", NULL);
-   efl_key_data_set(ec_url, "jango_song", NULL);
-   if (func) func(data, song);
-   _song_delete(song);
-   return EINA_FALSE;
-}
-
-static Eina_Bool
-_search_data_end_cb(void *data, int type EINA_UNUSED, void *event_info)
-{
-   Ecore_Con_Event_Url_Complete *url_complete = event_info;
-   Ecore_Con_Url *ec_url = url_complete->url_con;
-   Jango_Session *s = ecore_con_url_data_get(ec_url);
-   void **step = efl_key_data_get(ec_url, "jango_step");
-
-   if (!step || *step != _url_search_step) return EINA_TRUE;
-
-   s->data_len = 0;
-   if (url_complete->status)
+   if (s->data_len)
      {
         Eina_List *ret = NULL;
         char *buf = s->data_buf, *label, *end;
@@ -276,11 +284,11 @@ _search_data_end_cb(void *data, int type EINA_UNUSED, void *event_info)
              ret = eina_list_append(ret, item);
              buf = strchr(url, '}');
           }
-        Jango_Search_Ready_Cb func = efl_key_data_get(ec_url, "jango_search_ready_cb");
-        data = efl_key_data_get(ec_url, "jango_search_ready_data");
+        Jango_Search_Ready_Cb func = efl_key_data_get(dialer, "Jango Search Ready Cb");
+        data = efl_key_data_get(dialer, "Jango Search Ready Data");
         if (func) func(data, ret);
      }
-   return EINA_FALSE;
+   s->data_len = 0;
 }
 
 Eina_Bool
@@ -288,12 +296,6 @@ jango_init()
 {
    if (!_init_cnt)
      {
-        ecore_event_handler_add(ECORE_CON_EVENT_URL_DATA, _data_get_cb, NULL);
-        ecore_event_handler_add(ECORE_CON_EVENT_URL_COMPLETE, _session_get_cb, NULL);
-        ecore_event_handler_add(ECORE_CON_EVENT_URL_COMPLETE, _song_link_get_cb, NULL);
-        ecore_event_handler_add(ECORE_CON_EVENT_URL_DATA, _song_data_get_cb, NULL);
-        ecore_event_handler_add(ECORE_CON_EVENT_URL_COMPLETE, _song_data_end_cb, NULL);
-        ecore_event_handler_add(ECORE_CON_EVENT_URL_COMPLETE, _search_data_end_cb, NULL);
      }
    _init_cnt++;
    return EINA_TRUE;
@@ -324,27 +326,24 @@ jango_activate(Jango_Session *s, const char *keyword, Jango_Session_Cb session_c
    s->keyword = eina_stringshare_add(keyword);
 
    sprintf(url, "%s/music/%s", _base_url, keyword);
-   s->con_url = ecore_con_url_new(url);
-   ecore_con_url_additional_header_add(s->con_url, "User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0");
-   ecore_con_url_data_set(s->con_url, s);
-   efl_key_data_set(s->con_url, "jango_step", &_url_session_id_step);
-   efl_key_data_set(s->con_url, "jango_session_cb", session_cb);
-   efl_key_data_set(s->con_url, "jango_session_data", data);
-   ecore_con_url_get(s->con_url);
+   Efl_Net_Dialer_Http *dialer = _dialer_create(EINA_TRUE, NULL, _session_get_cb);
+   efl_key_data_set(dialer, "Jango Session", s);
+   efl_key_data_set(dialer, "Jango Session Cb", session_cb);
+   efl_key_data_set(dialer, "Jango Session Data", data);
+   efl_net_dialer_dial(dialer, url);
 }
 
 void
 jango_fetch_next(Jango_Session *s, Jango_Download_Cb download_cb, void *data)
 {
    char url[1024];
-   Ecore_Con_Url *ec_url = s->con_url;
    sprintf(url, "%s/streams/info?sid=%s&stid=%s", _base_url, s->session_id, s->station_id);
-   ecore_con_url_additional_header_add(ec_url, "Cookie", s->cookie);
-   ecore_con_url_url_set(ec_url, url);
-   efl_key_data_set(ec_url, "jango_step", &_url_song_link_step);
-   efl_key_data_set(ec_url, "jango_download_cb", download_cb);
-   efl_key_data_set(ec_url, "jango_download_data", data);
-   ecore_con_url_get(ec_url);
+   Efl_Net_Dialer_Http *dialer = _dialer_create(EINA_TRUE, NULL, _song_link_get_cb);
+   if (s->cookie) efl_net_dialer_http_request_header_add(dialer, "Cookie", s->cookie);
+   efl_key_data_set(dialer, "Jango Session", s);
+   efl_key_data_set(dialer, "Jango Download Cb", download_cb);
+   efl_key_data_set(dialer, "Jango Download Data", data);
+   efl_net_dialer_dial(dialer, url);
 }
 
 void
@@ -352,13 +351,12 @@ jango_search(Jango_Session *s, const char *keyword, Jango_Search_Ready_Cb search
 {
    char url[1024];
    sprintf(url, "%s/artists/jsearch?term=%s", _base_url, keyword);
-   s->con_url = ecore_con_url_new(url);
-   ecore_con_url_additional_header_add(s->con_url, "User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0");
-   ecore_con_url_data_set(s->con_url, s);
-   efl_key_data_set(s->con_url, "jango_step", &_url_search_step);
-   efl_key_data_set(s->con_url, "jango_search_ready_cb", search_cb);
-   efl_key_data_set(s->con_url, "jango_search_ready_data", data);
-   ecore_con_url_get(s->con_url);
+   Efl_Net_Dialer_Http *dialer = _dialer_create(EINA_TRUE, NULL, _search_data_end_cb);
+   efl_net_dialer_http_request_header_add(dialer, "Cookie", s->cookie);
+   efl_key_data_set(dialer, "Jango Session", s);
+   efl_key_data_set(dialer, "Jango Search Ready Cb", search_cb);
+   efl_key_data_set(dialer, "Jango Search Ready Data", data);
+   efl_net_dialer_dial(dialer, url);
 }
 
 void

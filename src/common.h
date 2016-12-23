@@ -18,8 +18,8 @@ typedef struct
    char *session_id;
    char *station_id;
    char *cookie;
-   int data_len;
-   int data_buf_len;
+   unsigned int data_len;
+   unsigned int data_buf_len;
    int last_song_id;
 } Jango_Session;
 
