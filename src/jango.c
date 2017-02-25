@@ -276,8 +276,10 @@ _search_data_end_cb(void *data, const Efl_Event *ev)
              item->label = eina_stringshare_add_length(label, end - label);
 
              char *url = strstr(end, "\"url\"");
+             if (!url) break;
              url = strstr(url, ":\"");
              if (url) url += 2;
+             else break;
              end = strchr(url, '\"');
              item->url = eina_stringshare_add_length(url, end - url);
 

@@ -201,13 +201,16 @@ _media_glitem_refresh(Media_Element *melt)
         _media_glitem_create(melt);
         return;
      }
-   EINA_LIST_FOREACH(melt->static_elts, itr, selt)
+   if (melt->expanded)
      {
-        _media_glitem_refresh(selt);
-     }
-   EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt)
-     {
-        _media_glitem_refresh(selt);
+        EINA_LIST_FOREACH(melt->static_elts, itr, selt)
+          {
+             _media_glitem_refresh(selt);
+          }
+        EINA_LIST_FOREACH(melt->dynamic_elts, itr, selt)
+          {
+             _media_glitem_refresh(selt);
+          }
      }
 }
 
@@ -905,6 +908,7 @@ _media_del(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_inf
      }
    else
       _cfg->elements = eina_list_remove(_cfg->elements, m);
+   elm_object_item_del(sel);
    _media_genlist_refresh();
    _write_to_file(_cfg_filename);
 }
